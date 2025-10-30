@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
-// 🔹 Campo de texto customizado
+/// 🔹 Campo de texto customizado com bordas arredondadas e suporte a foco opcional.
 class CustomRadiusTextfield extends StatelessWidget {
   final TextEditingController controller;
   final String hintText;
-  final FocusNode focusNode;
+  final FocusNode? focusNode; // ← agora é opcional
   final VoidCallback? onEditingComplete;
   final TextInputType keyboardType;
   final int? maxLines;
@@ -16,7 +16,7 @@ class CustomRadiusTextfield extends StatelessWidget {
     Key? key,
     required this.controller,
     required this.hintText,
-    required this.focusNode,
+    this.focusNode, // ← tornou opcional
     this.onEditingComplete,
     this.keyboardType = TextInputType.text,
     this.maxLines = 1,
@@ -36,21 +36,23 @@ class CustomRadiusTextfield extends StatelessWidget {
       inputFormatters: inputFormatters,
       decoration: InputDecoration(
         hintText: hintText,
+        hintStyle: const TextStyle(color: Colors.black54),
         border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: BorderRadius.circular(10),
           borderSide: BorderSide(color: Colors.red.shade700),
         ),
         enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(8),
+          borderRadius: BorderRadius.circular(10),
           borderSide: BorderSide(color: Colors.red.shade700),
         ),
         focusedBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(8),
-          borderSide: BorderSide(color: Colors.red),
+          borderRadius: BorderRadius.circular(10),
+          borderSide: const BorderSide(color: Colors.red, width: 2),
         ),
         fillColor: Colors.white,
         filled: true,
-        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        contentPadding:
+            const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
       ),
       style: const TextStyle(color: Colors.black87),
       cursorColor: Colors.red,
@@ -58,7 +60,7 @@ class CustomRadiusTextfield extends StatelessWidget {
   }
 }
 
-// 🔹 Botão customizado
+/// 🔹 Botão customizado com cantos arredondados e cor configurável.
 class CustomRadiusButton extends StatelessWidget {
   final VoidCallback onPressed;
   final String text;
@@ -96,7 +98,7 @@ class CustomRadiusButton extends StatelessWidget {
           backgroundColor: backgroundColor ?? Colors.red,
           padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
           shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(8),
+            borderRadius: BorderRadius.circular(10),
           ),
           elevation: 3,
         ),

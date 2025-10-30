@@ -30,7 +30,7 @@ class ChooseLoginTypePage extends StatelessWidget {
       body: Container(
         decoration: const BoxDecoration(
           gradient: LinearGradient(
-            colors: [Colors.red, Colors.white],
+            colors: [Colors.red, Colors.black],
             begin: Alignment.topCenter,
             end: Alignment.bottomCenter,
           ),
@@ -55,7 +55,7 @@ class ChooseLoginTypePage extends StatelessWidget {
                     style: TextStyle(
                       fontSize: 20,
                       fontWeight: FontWeight.bold,
-                      color: Colors.red.shade700,
+                      color: Colors.white
                     ),
                     textAlign: TextAlign.center,
                   ),

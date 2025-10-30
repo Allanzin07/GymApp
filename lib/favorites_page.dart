@@ -1,10 +1,41 @@
 import 'package:flutter/material.dart';
-import 'ads_carousel.dart'; // para poder usar GymAd
+import 'ads_carousel.dart'; // para usar GymAd
 
-class FavoritesPage extends StatelessWidget {
+class FavoritesPage extends StatefulWidget {
   final List<GymAd> favorites;
+  final Function(List<GymAd>) onFavoritesChanged;
 
-  const FavoritesPage({super.key, required this.favorites});
+  const FavoritesPage({
+    super.key,
+    required this.favorites,
+    required this.onFavoritesChanged,
+  });
+
+  @override
+  State<FavoritesPage> createState() => _FavoritesPageState();
+}
+
+class _FavoritesPageState extends State<FavoritesPage> {
+  late List<GymAd> _favorites;
+
+  @override
+  void initState() {
+    super.initState();
+    _favorites = List.from(widget.favorites);
+  }
+
+  void _removeFavorite(GymAd ad) {
+    setState(() {
+      _favorites.removeWhere((item) => item.id == ad.id);
+    });
+    widget.onFavoritesChanged(_favorites);
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text('${ad.gymName} removido dos favoritos'),
+        duration: const Duration(seconds: 2),
+      ),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -13,7 +44,7 @@ class FavoritesPage extends StatelessWidget {
         title: const Text("Meus Favoritos"),
         backgroundColor: Colors.red,
       ),
-      body: favorites.isEmpty
+      body: _favorites.isEmpty
           ? const Center(
               child: Text(
                 "Nenhum anúncio favoritado ainda",
@@ -21,16 +52,27 @@ class FavoritesPage extends StatelessWidget {
               ),
             )
           : ListView.builder(
-              itemCount: favorites.length,
+              itemCount: _favorites.length,
               itemBuilder: (context, index) {
-                final ad = favorites[index];
-                return Card(
-                  margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                  child: ListTile(
-                    leading: Image.network(ad.imageUrl, width: 60, fit: BoxFit.cover),
-                    title: Text(ad.gymName),
-                    subtitle: Text(ad.title),
-                    trailing: const Icon(Icons.favorite, color: Colors.red),
+                final ad = _favorites[index];
+                return Dismissible(
+                  key: Key(ad.id),
+                  direction: DismissDirection.endToStart,
+                  background: Container(
+                    color: Colors.red,
+                    alignment: Alignment.centerRight,
+                    padding: const EdgeInsets.symmetric(horizontal: 20),
+                    child: const Icon(Icons.delete, color: Colors.white),
+                  ),
+                  onDismissed: (_) => _removeFavorite(ad),
+                  child: Card(
+                    margin: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                    child: ListTile(
+                      leading: Image.network(ad.imageUrl, width: 60, fit: BoxFit.cover),
+                      title: Text(ad.gymName),
+                      subtitle: Text(ad.title),
+                      trailing: const Icon(Icons.favorite, color: Colors.red),
+                    ),
                   ),
                 );
               },

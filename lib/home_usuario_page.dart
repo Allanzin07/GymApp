@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'login_page.dart';
 import 'ads_carousel.dart';
 import 'favorites_page.dart';
@@ -7,63 +6,86 @@ import 'perfil_academia_page.dart';
 import 'perfil_profissional_page.dart';
 
 class HomeUsuarioPage extends StatefulWidget {
-  const HomeUsuarioPage({super.key});
+  final bool guestMode;
+  const HomeUsuarioPage({super.key, this.guestMode = false});
 
   @override
   State<HomeUsuarioPage> createState() => _HomeUsuarioPageState();
 }
 
 class _HomeUsuarioPageState extends State<HomeUsuarioPage> {
-  bool isLoggedIn = false;
+  bool isLoggedIn = true;
   List<GymAd> favoriteAds = [];
 
+  void _logout() {
+    if (widget.guestMode) {
+      Navigator.pushAndRemoveUntil(
+        context,
+        MaterialPageRoute(builder: (_) => const LoginPage(userType: 'Usuário')),
+        (route) => false,
+      );
+      return;
+    }
+
+    setState(() => isLoggedIn = false);
+    Navigator.pushAndRemoveUntil(
+      context,
+      MaterialPageRoute(builder: (_) => const LoginPage(userType: 'Usuário')),
+      (route) => false,
+    );
+  }
+
   void _onLoginOrProfile() {
+    if (widget.guestMode) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+            content: Text(
+                'Modo visitante: crie uma conta para acessar mais recursos.')),
+      );
+      return;
+    }
+
     if (isLoggedIn) {
-      print('Abrir perfil de usuário');
-      // Futuro: redirecionar para o perfil do próprio usuário
+      print('Abrir perfil do usuário');
     } else {
       Navigator.push(
         context,
-        MaterialPageRoute(
-          builder: (_) => const LoginPage(userType: 'Usuário'),
-        ),
-      ).then((_) {
-        setState(() {
-          isLoggedIn = true;
-        });
-      });
+        MaterialPageRoute(builder: (_) => const LoginPage(userType: 'Usuário')),
+      ).then((_) => setState(() => isLoggedIn = true));
     }
   }
 
   Widget _buildDrawerItem(String label, IconData icon, VoidCallback onTap) {
     return ListTile(
       leading: Icon(icon, color: Colors.red),
-      title: Text(
-        label,
-        style: const TextStyle(fontWeight: FontWeight.bold),
-      ),
+      title: Text(label, style: const TextStyle(fontWeight: FontWeight.bold)),
       onTap: onTap,
     );
   }
 
-  // 🔥 Novo método: stream de anúncios do Firestore
-  Stream<List<GymAd>> _getAdsStream() {
-    return FirebaseFirestore.instance
-        .collection('anuncios')
-        .orderBy('criadoEm', descending: true)
-        .snapshots()
-        .map((snapshot) => snapshot.docs.map((doc) {
-              final data = doc.data();
-              return GymAd(
-                id: doc.id,
-                gymName: data['nome'] ?? '',
-                title: data['descricao'] ?? '',
-                imageUrl: data['imagem'] ?? '',
-                distance: data['distancia'] ?? '',
-                rating: (data['avaliacao'] ?? 0).toDouble(),
-                type: data['tipo'] ?? 'Academia',
-              );
-            }).toList());
+  List<GymAd> _exampleAds() {
+    return [
+      GymAd(
+        id: '1',
+        gymName: 'Academia Alpha',
+        title: 'Musculação e funcional de alta performance',
+        imageUrl:
+            'https://images.unsplash.com/photo-1554284126-aa88f22d8f85?w=1200',
+        distance: '300m',
+        rating: 4.7,
+        type: 'Academia',
+      ),
+      GymAd(
+        id: '2',
+        gymName: 'João Personal',
+        title: 'Aulas personalizadas e consultoria',
+        imageUrl:
+            'https://images.unsplash.com/photo-1599058917212-d750089bc07c?w=1200',
+        distance: '1.2km',
+        rating: 4.9,
+        type: 'Profissional',
+      ),
+    ];
   }
 
   bool _isFavorite(GymAd ad) => favoriteAds.any((fav) => fav.id == ad.id);
@@ -79,36 +101,38 @@ class _HomeUsuarioPageState extends State<HomeUsuarioPage> {
   }
 
   void _onTapAd(GymAd ad) {
+    if (widget.guestMode) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+            content: Text('Crie uma conta para visualizar detalhes.')),
+      );
+      return;
+    }
+
     if (ad.type == 'Academia') {
-      Navigator.push(
-        context,
-        MaterialPageRoute(builder: (_) => PerfilAcademiaPage(ad: ad)),
-      );
+      Navigator.push(context,
+          MaterialPageRoute(builder: (_) => PerfilAcademiaPage(ad: ad)));
     } else if (ad.type == 'Profissional') {
-      Navigator.push(
-        context,
-        MaterialPageRoute(builder: (_) => PerfilProfissionalPage(ad: ad)),
-      );
+      Navigator.push(context,
+          MaterialPageRoute(builder: (_) => PerfilProfissionalPage(ad: ad)));
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    final ads = _exampleAds();
+
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Bem-vindo'),
+        title: Text(widget.guestMode ? 'Bem-vindo (Visitante)' : 'Bem-vindo'),
         backgroundColor: Colors.red,
         actions: [
-          TextButton(
-            onPressed: _onLoginOrProfile,
-            child: Text(
-              isLoggedIn ? 'Perfil' : 'Entrar',
-              style: const TextStyle(
-                color: Colors.white,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-          )
+          IconButton(
+            icon: Icon(widget.guestMode ? Icons.login : Icons.logout,
+                color: Colors.white),
+            tooltip: widget.guestMode ? 'Entrar' : 'Sair',
+            onPressed: _logout,
+          ),
         ],
       ),
       drawer: Drawer(
@@ -118,10 +142,8 @@ class _HomeUsuarioPageState extends State<HomeUsuarioPage> {
             DrawerHeader(
               decoration: BoxDecoration(color: Colors.red.shade700),
               child: const Center(
-                child: Text(
-                  'Menu',
-                  style: TextStyle(color: Colors.white, fontSize: 24),
-                ),
+                child: Text('Menu',
+                    style: TextStyle(color: Colors.white, fontSize: 24)),
               ),
             ),
             _buildDrawerItem('Home', Icons.home, () => Navigator.pop(context)),
@@ -130,7 +152,14 @@ class _HomeUsuarioPageState extends State<HomeUsuarioPage> {
               Navigator.push(
                 context,
                 MaterialPageRoute(
-                  builder: (_) => FavoritesPage(favorites: favoriteAds),
+                  builder: (_) => FavoritesPage(
+                    favorites: favoriteAds,
+                    onFavoritesChanged: (updatedFavorites) {
+                      setState(() {
+                        favoriteAds = updatedFavorites;
+                      });
+                    },
+                  ),
                 ),
               );
             }),
@@ -145,34 +174,31 @@ class _HomeUsuarioPageState extends State<HomeUsuarioPage> {
             child: Text(
               'Anúncios de academias e profissionais próximos',
               style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-                color: Colors.red.shade700,
-              ),
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.red.shade700),
             ),
           ),
           const SizedBox(height: 12),
-
-          // 🔥 Substitui o AdsCarousel fixo pelo StreamBuilder
-          StreamBuilder<List<GymAd>>(
-            stream: _getAdsStream(),
-            builder: (context, snapshot) {
-              if (snapshot.connectionState == ConnectionState.waiting) {
-                return const Center(child: CircularProgressIndicator());
-              }
-              if (!snapshot.hasData || snapshot.data!.isEmpty) {
-                return const Center(child: Text('Nenhum anúncio encontrado.'));
-              }
-
-              final ads = snapshot.data!;
-              return AdsCarousel(
-                ads: ads,
-                onTapAd: _onTapAd,
-                onFavorite: _toggleFavorite,
-                isFavorite: _isFavorite,
-              );
-            },
+          AdsCarousel(
+            ads: ads,
+            onTapAd: _onTapAd,
+            onFavorite: _toggleFavorite,
+            isFavorite: _isFavorite,
           ),
+          if (widget.guestMode)
+            Padding(
+              padding: const EdgeInsets.all(16),
+              child: Card(
+                color: Colors.grey[200],
+                child: const ListTile(
+                  leading: Icon(Icons.info_outline),
+                  title: Text('Modo visitante'),
+                  subtitle: Text(
+                      'Crie uma conta para comprar planos ou contratar serviços.'),
+                ),
+              ),
+            ),
         ],
       ),
     );

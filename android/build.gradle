@@ -5,8 +5,12 @@ buildscript {
     }
 
     dependencies {
+        // Android Gradle Plugin atualizado
+        classpath 'com.android.tools.build:gradle:8.6.0'
+        // Kotlin atualizado
+        classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:2.1.0"
+        // Google Services (Firebase, etc)
         classpath 'com.google.gms:google-services:4.4.2'
-        classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:1.9.25"
     }
 }
 
@@ -17,7 +21,7 @@ allprojects {
     }
 }
 
-// 🔧 Diretórios de build
+// Diretórios de build
 rootProject.buildDir = "../build"
 
 subprojects {
@@ -28,7 +32,7 @@ subprojects {
     project.evaluationDependsOn(":app")
 }
 
-// 🧹 Task de limpeza do projeto
+// Task de limpeza
 tasks.register("clean", Delete) {
     delete rootProject.buildDir
 }

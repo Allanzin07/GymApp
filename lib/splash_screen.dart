@@ -1,6 +1,6 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
-import 'choose_login_type_page.dart';
+import 'choose_login_type_page.dart'; // Mantido, garantindo a funcionalidade
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
@@ -31,7 +31,7 @@ class _SplashScreenState extends State<SplashScreen>
     // Inicia a animação de fade logo que o app abre
     _fadeController.forward();
 
-    // Timer para transição de página após 3 segundos
+    // Timer para transição de página após 3 segundos (FUNCIONALIDADE PRESERVADA)
     Timer(const Duration(seconds: 3), () {
       Navigator.pushReplacement(
         context,
@@ -40,7 +40,7 @@ class _SplashScreenState extends State<SplashScreen>
     });
   }
 
-  // Função para criar a rota com efeito de fade
+  // Função para criar a rota com efeito de fade (FUNCIONALIDADE PRESERVADA)
   Route _createFadeRoute(Widget page) {
     return PageRouteBuilder(
       transitionDuration: const Duration(milliseconds: 1000),
@@ -63,13 +63,30 @@ class _SplashScreenState extends State<SplashScreen>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      backgroundColor: Colors.white,
+      // Removemos o backgroundColor do Scaffold
       body: FadeTransition(
         opacity: _fadeAnimation,
-        child: SizedBox.expand(
-          child: Image.asset(
-            'assets/logo.png',
-            fit: BoxFit.cover,
+        // Adiciona um Container para aplicar o Gradiente
+        child: Container(
+          decoration: const BoxDecoration(
+            gradient: LinearGradient(
+              // Gradiente do vermelho (topo) para o branco (base)
+              colors: [Color(0xFFC62828), Colors.black],
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+            ),
+          ),
+          child: Center(
+            // Imagem Centralizada
+            child: Padding(
+              padding: const EdgeInsets.all(50.0),
+              child: Image.asset(
+                'assets/logo_nome_fundo.png', // O nome do arquivo da imagem
+                fit: BoxFit.contain,
+                // Define uma largura máxima de 70% da tela para a imagem
+                width: MediaQuery.of(context).size.width * 0.7, 
+              ),
+            ),
           ),
         ),
       ),
