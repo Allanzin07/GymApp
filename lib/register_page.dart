@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_storage/firebase_storage.dart'; // 👈 Import do Storage
 import 'package:image_picker/image_picker.dart';
 import 'package:mask_text_input_formatter/mask_text_input_formatter.dart';
 import 'custom_widgets.dart';
@@ -19,6 +20,7 @@ class RegisterPage extends StatefulWidget {
 class _RegisterPageState extends State<RegisterPage> {
   final _auth = FirebaseAuth.instance;
   final _firestore = FirebaseFirestore.instance;
+  final _storage = FirebaseStorage.instance;
 
   final TextEditingController _nameController = TextEditingController();
   final TextEditingController _emailController = TextEditingController();
@@ -48,6 +50,19 @@ class _RegisterPageState extends State<RegisterPage> {
     return digits.length == 11 || digits.length == 14;
   }
 
+  Future<String?> _uploadProfileImage(String uid) async {
+    if (_profileImage == null) return null;
+
+    try {
+      final ref = _storage.ref().child('profile_images').child('$uid.jpg');
+      await ref.putFile(_profileImage!);
+      return await ref.getDownloadURL();
+    } catch (e) {
+      debugPrint("Erro ao fazer upload da imagem: $e");
+      return null;
+    }
+  }
+
   Future<void> _onRegisterPressed() async {
     if (!_validateCpfCnpj(_cpfCnpjController.text)) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('CPF/CNPJ inválido')));
@@ -60,7 +75,7 @@ class _RegisterPageState extends State<RegisterPage> {
 
     setState(() => _loading = true);
     try {
-      // 🔹 Verifica se já existe o e-mail com outro tipo de conta
+      // Verifica se já existe o e-mail com outro tipo de conta
       final existingQuery = await _firestore
           .collection('users')
           .where('email', isEqualTo: _emailController.text.trim())
@@ -78,7 +93,7 @@ class _RegisterPageState extends State<RegisterPage> {
         }
       }
 
-      // 🔹 Cria conta no Firebase Auth
+      // Cria conta no Firebase Auth
       final userCredential = await _auth.createUserWithEmailAndPassword(
         email: _emailController.text.trim(),
         password: _passwordController.text.trim(),
@@ -87,6 +102,9 @@ class _RegisterPageState extends State<RegisterPage> {
       final user = userCredential.user!;
       final uid = user.uid;
 
+      // 🔹 Upload da imagem para o Storage
+      String? imageUrl = await _uploadProfileImage(uid);
+
       // 🔹 Salva dados no Firestore
       await _firestore.collection('users').doc(uid).set({
         'uid': uid,
@@ -94,10 +112,15 @@ class _RegisterPageState extends State<RegisterPage> {
         'email': _emailController.text.trim(),
         'cpfCnpj': _cpfCnpjController.text.trim(),
         'userType': widget.userType,
+        'fotoPerfilUrl': imageUrl ?? '', // 👈 salva URL da imagem
+        'descricao': '',
+        'localizacao': '',
+        'whatsapp': '',
+        'link': '',
         'createdAt': FieldValue.serverTimestamp(),
       });
 
-      // 🔹 Envia e-mail de verificação
+      // Envia e-mail de verificação
       await user.sendEmailVerification();
 
       ScaffoldMessenger.of(context).showSnackBar(
