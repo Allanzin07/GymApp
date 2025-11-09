@@ -4,6 +4,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 
 import 'editar_perfil_academia_page.dart';
 import 'login_page.dart';
+import 'post_feed_widget.dart';
 
 class HomeAcademiaPage extends StatefulWidget {
   const HomeAcademiaPage({super.key});
@@ -192,26 +193,12 @@ class _HomeAcademiaPageState extends State<HomeAcademiaPage> {
                   ),
                 ),
                 const Divider(height: 32, thickness: 0.8),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: const [
-                      Text(
-                        "Sobre a Academia",
-                        style: TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      SizedBox(height: 8),
-                      Text(
-                        "Aqui você poderá incluir mais detalhes sobre sua academia, planos, horários e diferenciais. "
-                        "Essas informações ajudam os usuários a conhecer melhor o seu negócio.",
-                        style: TextStyle(color: Colors.black87, height: 1.4),
-                      ),
-                    ],
-                  ),
+                // Feed de publicações
+                PostFeedWidget(
+                  userId: _academiaId,
+                  userName: nome,
+                  userPhotoUrl: fotoPerfilUrl,
+                  collectionName: 'academias',
                 ),
                 const SizedBox(height: 40),
               ],

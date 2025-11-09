@@ -105,20 +105,48 @@ class _RegisterPageState extends State<RegisterPage> {
       // 🔹 Upload da imagem para o Storage
       String? imageUrl = await _uploadProfileImage(uid);
 
-      // 🔹 Salva dados no Firestore
+      // 🔹 Salva dados no Firestore na collection 'users'
       await _firestore.collection('users').doc(uid).set({
         'uid': uid,
         'name': _nameController.text.trim(),
         'email': _emailController.text.trim(),
         'cpfCnpj': _cpfCnpjController.text.trim(),
         'userType': widget.userType,
-        'fotoPerfilUrl': imageUrl ?? '', // 👈 salva URL da imagem
+        'fotoPerfilUrl': imageUrl ?? '',
         'descricao': '',
         'localizacao': '',
         'whatsapp': '',
         'link': '',
         'createdAt': FieldValue.serverTimestamp(),
       });
+
+      // 🔹 Cria documento na collection específica baseado no tipo de usuário
+      if (widget.userType == 'Academia') {
+        await _firestore.collection('academias').doc(uid).set({
+          'nome': _nameController.text.trim(),
+          'email': _emailController.text.trim(),
+          'fotoPerfilUrl': imageUrl ?? '',
+          'capaUrl': '', // Será preenchido quando o usuário editar o perfil
+          'descricao': '',
+          'localizacao': '',
+          'whatsapp': '',
+          'link': '',
+          'createdAt': FieldValue.serverTimestamp(),
+        }, SetOptions(merge: true));
+      } else if (widget.userType == 'Profissional') {
+        await _firestore.collection('professionals').doc(uid).set({
+          'nome': _nameController.text.trim(),
+          'email': _emailController.text.trim(),
+          'fotoUrl': imageUrl ?? '',
+          'capaUrl': '', // Será preenchido quando o usuário editar o perfil
+          'especialidade': '',
+          'descricao': '',
+          'localizacao': '',
+          'whatsapp': '',
+          'link': '',
+          'createdAt': FieldValue.serverTimestamp(),
+        }, SetOptions(merge: true));
+      }
 
       // Envia e-mail de verificação
       await user.sendEmailVerification();

@@ -11,6 +11,7 @@ class CustomRadiusTextfield extends StatelessWidget {
   final int? maxLines;
   final bool obscureText;
   final List<TextInputFormatter>? inputFormatters;
+  final Widget? suffixIcon;
 
   const CustomRadiusTextfield({
     Key? key,
@@ -22,6 +23,7 @@ class CustomRadiusTextfield extends StatelessWidget {
     this.maxLines = 1,
     this.obscureText = false,
     this.inputFormatters,
+    this.suffixIcon,
   }) : super(key: key);
 
   @override
@@ -53,6 +55,7 @@ class CustomRadiusTextfield extends StatelessWidget {
         filled: true,
         contentPadding:
             const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
+        suffixIcon: suffixIcon,
       ),
       style: const TextStyle(color: Colors.black87),
       cursorColor: Colors.red,

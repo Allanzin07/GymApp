@@ -1,5 +1,7 @@
 import 'dart:io';
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:image_picker/image_picker.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_storage/firebase_storage.dart';
@@ -23,6 +25,7 @@ class _CreateAdPageState extends State<CreateAdPage> {
   final TextEditingController _distanceController = TextEditingController();
 
   File? _pickedImage;
+  XFile? _pickedImageXFile;
   bool _isUploading = false;
   double _uploadProgress = 0.0;
 
@@ -44,19 +47,26 @@ class _CreateAdPageState extends State<CreateAdPage> {
         maxWidth: 1600,
       );
       if (picked == null) return;
-      setState(() => _pickedImage = File(picked.path));
+      setState(() {
+        _pickedImageXFile = picked;
+        if (!kIsWeb) {
+          _pickedImage = File(picked.path);
+        }
+      });
     } catch (e) {
       debugPrint('Erro ao selecionar imagem: $e');
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Erro ao selecionar imagem')));
     }
   }
 
-  Future<String> _uploadImageToStorage(File file, String folder) async {
+  Future<String> _uploadImageToStorage(dynamic file, String folder) async {
     final storage = FirebaseStorage.instance;
     final id = const Uuid().v4();
     final ref = storage.ref().child('$folder/$id.jpg');
 
-    final uploadTask = ref.putFile(file);
+    final uploadTask = kIsWeb
+        ? ref.putData(await file.readAsBytes())
+        : ref.putFile(file as File);
 
     // monitorar progresso
     uploadTask.snapshotEvents.listen((TaskSnapshot snapshot) {
@@ -71,7 +81,7 @@ class _CreateAdPageState extends State<CreateAdPage> {
 
   Future<void> _createAd() async {
     if (!_formKey.currentState!.validate()) return;
-    if (_pickedImage == null) {
+    if (_pickedImageXFile == null) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Selecione uma imagem para o anúncio')));
       return;
     }
@@ -84,7 +94,7 @@ class _CreateAdPageState extends State<CreateAdPage> {
     try {
       final ownerId = widget.ownerId ?? 'anonymous';
       // 1) upload imagem
-      final imageUrl = await _uploadImageToStorage(_pickedImage!, 'ads_images/$ownerId');
+      final imageUrl = await _uploadImageToStorage(_pickedImageXFile!, 'ads_images/$ownerId');
 
       // 2) criar documento no Firestore
       final docRef = FirebaseFirestore.instance.collection('ads').doc();
@@ -129,16 +139,36 @@ class _CreateAdPageState extends State<CreateAdPage> {
       child: Icon(Icons.image, size: 56, color: Colors.grey.shade600),
     );
 
-    if (_pickedImage == null) return placeholder;
+    if (_pickedImageXFile == null) return placeholder;
 
     return ClipRRect(
       borderRadius: BorderRadius.circular(8),
-      child: Image.file(
-        _pickedImage!,
-        width: double.infinity,
-        height: 160,
-        fit: BoxFit.cover,
-      ),
+      child: kIsWeb
+          ? FutureBuilder<Uint8List>(
+              future: _pickedImageXFile!.readAsBytes(),
+              builder: (context, snapshot) {
+                if (snapshot.hasData) {
+                  return Image.memory(
+                    snapshot.data!,
+                    width: double.infinity,
+                    height: 160,
+                    fit: BoxFit.cover,
+                  );
+                }
+                return Container(
+                  width: double.infinity,
+                  height: 160,
+                  color: Colors.grey.shade300,
+                  child: const Center(child: CircularProgressIndicator()),
+                );
+              },
+            )
+          : Image.file(
+              _pickedImage!,
+              width: double.infinity,
+              height: 160,
+              fit: BoxFit.cover,
+            ),
     );
   }
 

@@ -1,9 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'login_page.dart';
-import 'adicionar_anuncio_page.dart';
 import 'editar_perfil_profissional_page.dart';
-
+import 'post_feed_widget.dart';
 
 class HomeProfissionalPage extends StatefulWidget {
   const HomeProfissionalPage({super.key});
@@ -13,164 +13,213 @@ class HomeProfissionalPage extends StatefulWidget {
 }
 
 class _HomeProfissionalPageState extends State<HomeProfissionalPage> {
-  String nomeProfissional = "João Personal";
-  String especialidade = "Treinamento Funcional";
-  String descricao =
-      "Profissional certificado com 5 anos de experiência ajudando alunos a alcançarem seus objetivos.";
+  final _firestore = FirebaseFirestore.instance;
+  final _auth = FirebaseAuth.instance;
+
+  String get _profissionalId {
+    final user = _auth.currentUser;
+    return user?.uid ?? 'profissional_demo';
+  }
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: const Text('Perfil Profissional'),
-        backgroundColor: Colors.red,
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.logout, color: Colors.white),
-            onPressed: () {
-              Navigator.pushReplacement(
-                context,
-                MaterialPageRoute(
-                  builder: (_) => const LoginPage(userType: 'Profissional'),
-                ),
-              );
-            },
-          ),
-        ],
-      ),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            // Cabeçalho com foto e nome
-            Row(
-              children: [
-                const CircleAvatar(
-                  radius: 40,
-                  backgroundImage: NetworkImage(
-                    'https://images.unsplash.com/photo-1605296867304-46d5465a13f1?w=800',
-                  ),
-                ),
-                const SizedBox(width: 16),
-                Expanded(
-                  child: Text(
-                    nomeProfissional,
-                    style: const TextStyle(
-                      fontSize: 22,
-                      fontWeight: FontWeight.bold,
+    return StreamBuilder<DocumentSnapshot>(
+      stream: _firestore.collection('professionals').doc(_profissionalId).snapshots(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Scaffold(
+            body: Center(
+              child: CircularProgressIndicator(color: Colors.red),
+            ),
+          );
+        }
+
+        final data = snapshot.data?.data() as Map<String, dynamic>? ?? {};
+
+        final nome = data['nome'] ?? 'Nome do Profissional';
+        final especialidade = data['especialidade'] ?? 'Especialidade não informada';
+        final descricao = data['descricao'] ?? 'Descrição ainda não cadastrada.';
+        final localizacao = data['localizacao'] ?? '';
+        final email = data['email'] ?? '';
+        final whatsapp = data['whatsapp'] ?? '';
+        final link = data['link'] ?? '';
+        final fotoUrl = data['fotoUrl'] ??
+            'https://cdn-icons-png.flaticon.com/512/149/149071.png';
+        final capaUrl = data['capaUrl'] ??
+            'https://images.unsplash.com/photo-1571019613914-85f342c55f86?w=1600&q=80&auto=format&fit=crop';
+
+        return Scaffold(
+          backgroundColor: Colors.grey[100],
+          appBar: AppBar(
+            title: const Text('Perfil Profissional'),
+            backgroundColor: Colors.red,
+            actions: [
+              IconButton(
+                icon: const Icon(Icons.logout, color: Colors.white),
+                onPressed: () {
+                  Navigator.pushReplacement(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => const LoginPage(userType: 'Profissional'),
                     ),
+                  );
+                },
+              ),
+            ],
+          ),
+          body: SingleChildScrollView(
+            child: Column(
+              children: [
+                // 📸 Foto de capa
+                Stack(
+                  clipBehavior: Clip.none,
+                  children: [
+                    Container(
+                      height: 180,
+                      width: double.infinity,
+                      decoration: BoxDecoration(
+                        image: DecorationImage(
+                          image: NetworkImage(capaUrl),
+                          fit: BoxFit.cover,
+                        ),
+                      ),
+                    ),
+                    // 🖼️ Foto de perfil
+                    Positioned(
+                      bottom: -50,
+                      left: 20,
+                      child: CircleAvatar(
+                        radius: 50,
+                        backgroundColor: Colors.white,
+                        backgroundImage: NetworkImage(fotoUrl),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 60),
+                // Nome e descrição
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        nome,
+                        style: const TextStyle(
+                          fontSize: 24,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        especialidade,
+                        style: TextStyle(
+                          fontSize: 16,
+                          color: Colors.red.shade600,
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      Text(
+                        descricao,
+                        style: const TextStyle(
+                          fontSize: 16,
+                          color: Colors.black87,
+                        ),
+                      ),
+                      const SizedBox(height: 12),
+                      if (localizacao.isNotEmpty)
+                        Row(
+                          children: [
+                            const Icon(Icons.location_on, color: Colors.grey, size: 18),
+                            const SizedBox(width: 4),
+                            Expanded(
+                              child: Text(
+                                localizacao,
+                                style: const TextStyle(color: Colors.grey),
+                              ),
+                            ),
+                          ],
+                        ),
+                      if (email.isNotEmpty) ...[
+                        const SizedBox(height: 8),
+                        Row(
+                          children: [
+                            const Icon(Icons.email, color: Colors.grey, size: 18),
+                            const SizedBox(width: 4),
+                            Text(email, style: const TextStyle(color: Colors.grey)),
+                          ],
+                        ),
+                      ],
+                      if (whatsapp.isNotEmpty) ...[
+                        const SizedBox(height: 8),
+                        Row(
+                          children: [
+                            const Icon(Icons.phone, color: Colors.grey, size: 18),
+                            const SizedBox(width: 4),
+                            Text(whatsapp, style: const TextStyle(color: Colors.grey)),
+                          ],
+                        ),
+                      ],
+                      if (link.isNotEmpty) ...[
+                        const SizedBox(height: 8),
+                        Row(
+                          children: [
+                            const Icon(Icons.link, color: Colors.grey, size: 18),
+                            const SizedBox(width: 4),
+                            Flexible(
+                              child: Text(
+                                link,
+                                style: const TextStyle(color: Colors.blue),
+                                overflow: TextOverflow.ellipsis,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ],
+                      const SizedBox(height: 16),
+                      Align(
+                        alignment: Alignment.centerLeft,
+                        child: ElevatedButton.icon(
+                          onPressed: () {
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (_) => const EditarPerfilProfissionalPage(),
+                              ),
+                            );
+                          },
+                          icon: const Icon(Icons.edit, color: Colors.white),
+                          label: const Text(
+                            "Editar Perfil",
+                            style: TextStyle(color: Colors.white),
+                          ),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.red,
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                    ],
                   ),
                 ),
+                const Divider(height: 32, thickness: 0.8),
+                // Feed de publicações
+                PostFeedWidget(
+                  userId: _profissionalId,
+                  userName: nome,
+                  userPhotoUrl: fotoUrl,
+                  collectionName: 'professionals',
+                ),
+                const SizedBox(height: 40),
               ],
             ),
-            const SizedBox(height: 8),
-            Text(
-              especialidade,
-              style: TextStyle(
-                fontSize: 16,
-                color: Colors.red.shade600,
-              ),
-            ),
-            const Divider(height: 30),
-
-            // Descrição do profissional
-            Text(
-              descricao,
-              style: const TextStyle(fontSize: 16),
-            ),
-            const SizedBox(height: 20),
-
-            // Botões de ação
-            Center(
-              child: Column(
-                children: [
-                  ElevatedButton.icon(
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.red,
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 24,
-                        vertical: 12,
-                      ),
-                    ),
-                    icon: const Icon(Icons.edit),
-                    label: const Text(
-                      'Editar Perfil',
-                      style: TextStyle(fontSize: 16),
-                    ),
-                    onPressed: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => const EditarPerfilProfissionalPage(),
-                        ),
-                      );
-                    },
-                  ),
-                  const SizedBox(height: 16),
-                  ElevatedButton.icon(
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.green,
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 24,
-                        vertical: 12,
-                      ),
-                    ),
-                    icon: const Icon(Icons.campaign),
-                    label: const Text(
-                      'Adicionar Anúncio',
-                      style: TextStyle(fontSize: 16),
-                    ),
-                    onPressed: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => const AdicionarAnuncioPage(),
-                        ),
-                      );
-                    },
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 40),
-
-            const Text(
-              'Avaliações dos alunos:',
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            const SizedBox(height: 10),
-            _avaliacaoItem("Carlos Silva", 5, "Excelente profissional!"),
-            _avaliacaoItem("Marina Costa", 4, "Muito atencioso e motivador."),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _avaliacaoItem(String nome, int estrelas, String comentario) {
-    return Card(
-      elevation: 2,
-      margin: const EdgeInsets.symmetric(vertical: 6),
-      child: ListTile(
-        leading: Icon(Icons.person, color: Colors.red.shade400),
-        title: Text(nome),
-        subtitle: Text(comentario),
-        trailing: Row(
-          mainAxisSize: MainAxisSize.min,
-          children: List.generate(
-            5,
-            (index) => Icon(
-              index < estrelas ? Icons.star : Icons.star_border,
-              color: Colors.amber,
-              size: 20,
-            ),
           ),
-        ),
-      ),
+        );
+      },
     );
   }
 }

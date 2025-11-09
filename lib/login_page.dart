@@ -24,6 +24,7 @@ class _LoginPageState extends State<LoginPage> {
   final TextEditingController _emailController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
   bool _loading = false;
+  bool _obscurePassword = true;
 
   Widget _getHomePageByType({bool guestMode = false}) {
     switch (widget.userType) {
@@ -199,7 +200,22 @@ class _LoginPageState extends State<LoginPage> {
 
                 CustomRadiusTextfield(controller: _emailController, hintText: 'E-mail'),
                 const SizedBox(height: 16),
-                CustomRadiusTextfield(controller: _passwordController, hintText: 'Senha', obscureText: true),
+                CustomRadiusTextfield(
+                  controller: _passwordController,
+                  hintText: 'Senha',
+                  obscureText: _obscurePassword,
+                  suffixIcon: IconButton(
+                    icon: Icon(
+                      _obscurePassword ? Icons.visibility : Icons.visibility_off,
+                      color: Colors.grey,
+                    ),
+                    onPressed: () {
+                      setState(() {
+                        _obscurePassword = !_obscurePassword;
+                      });
+                    },
+                  ),
+                ),
                 const SizedBox(height: 8),
 
                 Align(
