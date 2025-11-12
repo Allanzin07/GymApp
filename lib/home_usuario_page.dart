@@ -1,9 +1,13 @@
 import 'package:flutter/material.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'login_page.dart';
 import 'ads_carousel.dart';
 import 'favorites_page.dart';
-import 'perfil_academia_page.dart';
-import 'perfil_profissional_page.dart';
+import 'minha_rede_page.dart';
+import 'home_academia_page.dart';
+import 'home_profissional_page.dart';
+import 'conversations_page.dart';
 
 class HomeUsuarioPage extends StatefulWidget {
   final bool guestMode;
@@ -16,6 +20,11 @@ class HomeUsuarioPage extends StatefulWidget {
 class _HomeUsuarioPageState extends State<HomeUsuarioPage> {
   bool isLoggedIn = true;
   List<GymAd> favoriteAds = [];
+
+  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  List<GymAd> _allAds = [];
+  bool _isLoadingAds = true;
+  String? _loadError;
 
   // Filtros
   String _searchText = '';
@@ -32,59 +41,91 @@ class _HomeUsuarioPageState extends State<HomeUsuarioPage> {
     );
   }
 
-  List<GymAd> _exampleAds() {
-    return [
-      GymAd(
-        id: '1',
-        gymName: 'Academia Alpha',
-        title: 'Musculação e funcional de alta performance',
-        imageUrl:
-            'https://images.unsplash.com/photo-1554284126-aa88f22d8f85?w=1200',
-        distance: '300m',
-        rating: 4.7,
-        type: 'Academia',
-      ),
-      GymAd(
-        id: '2',
-        gymName: 'João Personal',
-        title: 'Aulas personalizadas e consultoria',
-        imageUrl:
-            'https://images.unsplash.com/photo-1599058917212-d750089bc07c?w=1200',
-        distance: '1.2km',
-        rating: 4.9,
-        type: 'Profissional',
-      ),
-      GymAd(
-        id: '3',
-        gymName: 'FitZone Academia',
-        title: 'CrossFit e treinos funcionais',
-        imageUrl:
-            'https://images.unsplash.com/photo-1517836357463-d25dfeac3438?w=1200',
-        distance: '2.5km',
-        rating: 4.5,
-        type: 'Academia',
-      ),
-      GymAd(
-        id: '4',
-        gymName: 'Maria Nutricionista',
-        title: 'Consultoria nutricional esportiva',
-        imageUrl:
-            'https://images.unsplash.com/photo-1571019613454-1cb2f99b2d8b?w=1200',
-        distance: '800m',
-        rating: 4.8,
-        type: 'Profissional',
-      ),
-      GymAd(
-        id: '5',
-        gymName: 'PowerGym',
-        title: 'Musculação avançada e powerlifting',
-        imageUrl:
-            'https://images.unsplash.com/photo-1534438327276-14e5300c3a48?w=1200',
-        distance: '5km',
-        rating: 4.6,
-        type: 'Academia',
-      ),
-    ];
+  @override
+  void initState() {
+    super.initState();
+    _loadAds();
+  }
+
+  Future<void> _loadAds() async {
+    setState(() {
+      _isLoadingAds = true;
+      _loadError = null;
+    });
+
+    try {
+      final results = await Future.wait([
+        _firestore.collection('academias').get(),
+        _firestore.collection('professionals').get(),
+      ]);
+
+      final academiasSnapshot = results[0];
+      final profissionaisSnapshot = results[1];
+
+      final academias = academiasSnapshot.docs.map((doc) {
+        final data = doc.data();
+        final nome = data['nome'] as String? ?? 'Academia';
+        final descricao = data['descricao'] as String? ?? 'Descubra nossos serviços e planos.';
+        final fotoPerfil = data['fotoPerfilUrl'] as String? ??
+            data['fotoUrl'] as String? ??
+            'https://images.unsplash.com/photo-1517836357463-d25dfeac3438?w=1200';
+        final distancia = data['distancia']?.toString() ?? data['distance']?.toString() ?? '0 km';
+        final avaliacao = _parseRating(data['avaliacao'] ?? data['rating']);
+
+        return GymAd(
+          id: doc.id,
+          gymName: nome,
+          title: descricao,
+          imageUrl: fotoPerfil,
+          distance: distancia,
+          rating: avaliacao,
+          type: 'Academia',
+        );
+      });
+
+      final profissionais = profissionaisSnapshot.docs.map((doc) {
+        final data = doc.data();
+        final nome = data['nome'] as String? ?? 'Profissional';
+        final especialidade = data['especialidade'] as String? ??
+            data['descricao'] as String? ??
+            'Conheça meu trabalho e resultados.';
+        final fotoPerfil = data['fotoUrl'] as String? ??
+            'https://cdn-icons-png.flaticon.com/512/149/149071.png';
+        final distancia = data['distancia']?.toString() ?? data['distance']?.toString() ?? '0 km';
+        final avaliacao = _parseRating(data['avaliacao'] ?? data['rating']);
+
+        return GymAd(
+          id: doc.id,
+          gymName: nome,
+          title: especialidade,
+          imageUrl: fotoPerfil,
+          distance: distancia,
+          rating: avaliacao,
+          type: 'Profissional',
+        );
+      });
+
+      setState(() {
+        _allAds = [...academias, ...profissionais];
+        _isLoadingAds = false;
+      });
+    } catch (e) {
+      setState(() {
+        _loadError = 'Erro ao carregar cadastros: $e';
+        _isLoadingAds = false;
+      });
+    }
+  }
+
+  double _parseRating(dynamic value) {
+    if (value is num) return value.toDouble().clamp(0, 5);
+    if (value is String) {
+      final parsed = double.tryParse(value.replaceAll(',', '.'));
+      if (parsed != null) {
+        return parsed.clamp(0, 5);
+      }
+    }
+    return 0.0;
   }
 
   /// ✅ Corrigido: função segura que aceita "m", "km", "k", letras maiúsculas/minúsculas e ignora erros
@@ -165,12 +206,16 @@ class _HomeUsuarioPageState extends State<HomeUsuarioPage> {
     if (ad.type == 'Academia') {
       Navigator.push(
         context,
-        MaterialPageRoute(builder: (_) => PerfilAcademiaPage(ad: ad)),
+        MaterialPageRoute(
+          builder: (_) => HomeAcademiaPage(academiaId: ad.id),
+        ),
       );
     } else if (ad.type == 'Profissional') {
       Navigator.push(
         context,
-        MaterialPageRoute(builder: (_) => PerfilProfissionalPage(ad: ad)),
+        MaterialPageRoute(
+          builder: (_) => HomeProfissionalPage(profissionalId: ad.id),
+        ),
       );
     }
   }
@@ -185,8 +230,7 @@ class _HomeUsuarioPageState extends State<HomeUsuarioPage> {
 
   @override
   Widget build(BuildContext context) {
-    final allAds = _exampleAds();
-    final filteredAds = _filterAds(allAds);
+    final filteredAds = _filterAds(_allAds);
 
     return Scaffold(
       appBar: AppBar(
@@ -226,6 +270,49 @@ class _HomeUsuarioPageState extends State<HomeUsuarioPage> {
                 ),
               );
             }),
+            _buildDrawerItem('Minha Rede', Icons.people, () {
+              Navigator.pop(context);
+              if (widget.guestMode) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Crie uma conta para acessar sua rede.'),
+                  ),
+                );
+                return;
+              }
+              Navigator.push(
+                context,
+                MaterialPageRoute(builder: (_) => const MinhaRedePage()),
+              );
+            }),
+            _buildDrawerItem('Chat', Icons.chat, () async {
+              Navigator.pop(context);
+              if (widget.guestMode) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Crie uma conta para usar o chat.'),
+                  ),
+                );
+                return;
+              }
+
+              final currentUser = FirebaseAuth.instance.currentUser;
+              if (currentUser == null) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Faça login para acessar o chat.'),
+                  ),
+                );
+                return;
+              }
+
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => const ConversationsPage(),
+                ),
+              );
+            }),
           ],
         ),
       ),
@@ -246,7 +333,37 @@ class _HomeUsuarioPageState extends State<HomeUsuarioPage> {
             ),
           ),
           const SizedBox(height: 16),
-          if (filteredAds.isEmpty)
+          if (_isLoadingAds)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 48),
+              child: Center(
+                child: CircularProgressIndicator(color: Colors.red),
+              ),
+            )
+          else if (_loadError != null)
+            Padding(
+              padding: const EdgeInsets.all(32),
+              child: Column(
+                children: [
+                  Text(
+                    _loadError!,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(color: Colors.red),
+                  ),
+                  const SizedBox(height: 12),
+                  ElevatedButton.icon(
+                    onPressed: _loadAds,
+                    icon: const Icon(Icons.refresh),
+                    label: const Text('Tentar novamente'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.red,
+                      foregroundColor: Colors.white,
+                    ),
+                  ),
+                ],
+              ),
+            )
+          else if (filteredAds.isEmpty)
             const Center(
               child: Padding(
                 padding: EdgeInsets.all(32),

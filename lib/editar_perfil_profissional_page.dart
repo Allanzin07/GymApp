@@ -1,12 +1,11 @@
-import 'dart:io';
 import 'dart:typed_data';
 import 'package:flutter/material.dart';
-import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:image_picker/image_picker.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_storage/firebase_storage.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:uuid/uuid.dart';
+import 'package:flutter_image_compress/flutter_image_compress.dart';
 
 class EditarPerfilProfissionalPage extends StatefulWidget {
   const EditarPerfilProfissionalPage({super.key});
@@ -34,10 +33,10 @@ class _EditarPerfilProfissionalPageState
   final TextEditingController _linkController = TextEditingController();
 
   // Imagens
-  File? _fotoPerfil;
-  File? _fotoCapa;
   XFile? _fotoPerfilXFile;
   XFile? _fotoCapaXFile;
+  Uint8List? _fotoPerfilBytes;
+  Uint8List? _fotoCapaBytes;
   String? _fotoPerfilUrlAtual;
   String? _fotoCapaUrlAtual;
 
@@ -126,11 +125,10 @@ class _EditarPerfilProfissionalPageState
         maxWidth: 1200,
       );
       if (picked != null) {
+        final bytes = await picked.readAsBytes();
         setState(() {
           _fotoPerfilXFile = picked;
-          if (!kIsWeb) {
-            _fotoPerfil = File(picked.path);
-          }
+          _fotoPerfilBytes = bytes;
         });
       }
     } catch (e) {
@@ -171,11 +169,10 @@ class _EditarPerfilProfissionalPageState
         maxWidth: 1920,
       );
       if (picked != null) {
+        final bytes = await picked.readAsBytes();
         setState(() {
           _fotoCapaXFile = picked;
-          if (!kIsWeb) {
-            _fotoCapa = File(picked.path);
-          }
+          _fotoCapaBytes = bytes;
         });
       }
     } catch (e) {
@@ -185,25 +182,68 @@ class _EditarPerfilProfissionalPageState
     }
   }
 
-  Future<String> _uploadImagem(dynamic file, String folder) async {
-    final id = const Uuid().v4();
-    final ref = _storage.ref().child('$folder/$id.jpg');
+  Future<String> _uploadImagem({
+    required String folder,
+    XFile? xFile,
+    Uint8List? cachedBytes,
+    int minWidth = 1080,
+    int minHeight = 1080,
+    int quality = 75,
+  }) async {
+    try {
+      final id = const Uuid().v4();
+      final ref = _storage.ref().child('$folder/$id.jpg');
+      final metadata = SettableMetadata(contentType: 'image/jpeg');
 
-    final uploadTask = kIsWeb 
-        ? ref.putData(await file.readAsBytes())
-        : ref.putFile(file as File);
+      Uint8List? originalBytes = cachedBytes;
 
-    uploadTask.snapshotEvents.listen((TaskSnapshot snapshot) {
-      final progress = snapshot.bytesTransferred /
-          (snapshot.totalBytes == 0 ? 1 : snapshot.totalBytes);
-      if (mounted) {
-        setState(() => _uploadProgress = progress);
+      if (originalBytes == null) {
+        if (xFile != null) {
+          originalBytes = await xFile.readAsBytes();
+        } else {
+          throw Exception('Nenhuma imagem selecionada.');
+        }
       }
-    });
 
-    final snapshot = await uploadTask.whenComplete(() {});
-    final downloadUrl = await snapshot.ref.getDownloadURL();
-    return downloadUrl;
+      final compressed = await FlutterImageCompress.compressWithList(
+        originalBytes,
+        minWidth: minWidth,
+        minHeight: minHeight,
+        quality: quality,
+        format: CompressFormat.jpeg,
+      );
+
+      final Uint8List dataToUpload =
+          compressed.isNotEmpty ? Uint8List.fromList(compressed) : originalBytes;
+
+      final uploadTask = ref.putData(
+        dataToUpload,
+        metadata,
+      );
+
+      uploadTask.snapshotEvents.listen((TaskSnapshot snapshot) {
+        final progress = snapshot.bytesTransferred /
+            (snapshot.totalBytes == 0 ? 1 : snapshot.totalBytes);
+        if (mounted) {
+          setState(() => _uploadProgress = progress);
+        }
+      }, onError: (error) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Falha no upload: $error')),
+          );
+        }
+      });
+
+      final snapshot = await uploadTask;
+      if (mounted) {
+        setState(() => _uploadProgress = 1.0);
+      }
+      final downloadUrl = await snapshot.ref.getDownloadURL();
+      return downloadUrl;
+    } catch (error) {
+      rethrow;
+    }
   }
 
   Future<void> _salvarPerfil() async {
@@ -221,16 +261,24 @@ class _EditarPerfilProfissionalPageState
       // Upload da foto de perfil se foi selecionada
       if (_fotoPerfilXFile != null) {
         fotoPerfilUrl = await _uploadImagem(
-          _fotoPerfilXFile!,
-          'professionals/$_profissionalId/perfil',
+          folder: 'professionals/$_profissionalId/perfil',
+          xFile: _fotoPerfilXFile,
+          cachedBytes: _fotoPerfilBytes,
+          minWidth: 600,
+          minHeight: 600,
+          quality: 72,
         );
       }
 
       // Upload da foto de capa se foi selecionada
       if (_fotoCapaXFile != null) {
         fotoCapaUrl = await _uploadImagem(
-          _fotoCapaXFile!,
-          'professionals/$_profissionalId/capa',
+          folder: 'professionals/$_profissionalId/capa',
+          xFile: _fotoCapaXFile,
+          cachedBytes: _fotoCapaBytes,
+          minWidth: 1600,
+          minHeight: 900,
+          quality: 80,
         );
       }
 
@@ -280,23 +328,12 @@ class _EditarPerfilProfissionalPageState
           child: _fotoCapaXFile != null
               ? ClipRRect(
                   borderRadius: BorderRadius.circular(12),
-                  child: kIsWeb
-                      ? FutureBuilder<Uint8List>(
-                          future: _fotoCapaXFile!.readAsBytes(),
-                          builder: (context, snapshot) {
-                            if (snapshot.hasData) {
-                              return Image.memory(
-                                snapshot.data!,
-                                fit: BoxFit.cover,
-                              );
-                            }
-                            return const Center(child: CircularProgressIndicator());
-                          },
-                        )
-                      : Image.file(
-                          _fotoCapa!,
+                  child: _fotoCapaBytes != null
+                      ? Image.memory(
+                          _fotoCapaBytes!,
                           fit: BoxFit.cover,
-                        ),
+                        )
+                      : const SizedBox.shrink(),
                 )
               : _fotoCapaUrlAtual != null
                   ? ClipRRect(
@@ -339,23 +376,12 @@ class _EditarPerfilProfissionalPageState
           ),
           child: _fotoPerfilXFile != null
               ? ClipOval(
-                  child: kIsWeb
-                      ? FutureBuilder<Uint8List>(
-                          future: _fotoPerfilXFile!.readAsBytes(),
-                          builder: (context, snapshot) {
-                            if (snapshot.hasData) {
-                              return Image.memory(
-                                snapshot.data!,
-                                fit: BoxFit.cover,
-                              );
-                            }
-                            return const Center(child: CircularProgressIndicator());
-                          },
-                        )
-                      : Image.file(
-                          _fotoPerfil!,
+                  child: _fotoPerfilBytes != null
+                      ? Image.memory(
+                          _fotoPerfilBytes!,
                           fit: BoxFit.cover,
-                        ),
+                        )
+                      : const SizedBox.shrink(),
                 )
               : _fotoPerfilUrlAtual != null
                   ? ClipOval(

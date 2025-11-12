@@ -1,0 +1,42 @@
+// storage.rules
+rules_version = '2';
+
+service firebase.storage {
+  match /b/{bucket}/o {
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(ownerId) {
+      return isSignedIn() && request.auth.uid == ownerId;
+    }
+
+    // Publica posts (imagens/vídeos) no feed. Qualquer pessoa pode ler,
+    // mas apenas o dono do post (uid) pode enviar/remover arquivos nesse diretório.
+    match /posts/{userId}/{allPaths=**} {
+      allow read: if true;
+      allow write: if isOwner(userId);
+    }
+
+    // Arquivos das academias (fotos de perfil/capa, etc.).
+    match /academias/{userId}/{allPaths=**} {
+      allow read: if true;
+      allow write: if isOwner(userId);
+    }
+
+    // Arquivos dos profissionais (fotos de perfil/capa, etc.).
+    match /professionals/{userId}/{allPaths=**} {
+      allow read: if true;
+      allow write: if isOwner(userId);
+    }
+
+    // Demais caminhos bloqueados por padrão.
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}
+
+
+
+

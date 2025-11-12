@@ -1,1 +1,14 @@
-{"flutter":{"platforms":{"android":{"default":{"projectId":"gymapp-5b905","appId":"1:333641060654:android:7bbbb320268cff6469aabf","fileOutput":"android/app/google-services.json"}},"dart":{"lib/firebase_options.dart":{"projectId":"gymapp-5b905","configurations":{"android":"1:333641060654:android:7bbbb320268cff6469aabf","web":"1:333641060654:web:406886a69dc8409d69aabf"}}}}}}
+{
+  "emulators": {
+    "auth": { "port": 9099 },
+    "firestore": { "port": 8080 },
+    "storage": { "port": 9199 },
+    "ui": { "enabled": true }
+  },
+  "firestore": {
+    "rules": "firestore.rules"
+  },
+  "storage": {
+    "rules": "storage.rules"
+  }
+}

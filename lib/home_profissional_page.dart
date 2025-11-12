@@ -4,9 +4,13 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'login_page.dart';
 import 'editar_perfil_profissional_page.dart';
 import 'post_feed_widget.dart';
+import 'minha_rede_page.dart';
+import 'conversations_page.dart';
 
 class HomeProfissionalPage extends StatefulWidget {
-  const HomeProfissionalPage({super.key});
+  final String? profissionalId;
+
+  const HomeProfissionalPage({super.key, this.profissionalId});
 
   @override
   State<HomeProfissionalPage> createState() => _HomeProfissionalPageState();
@@ -17,9 +21,11 @@ class _HomeProfissionalPageState extends State<HomeProfissionalPage> {
   final _auth = FirebaseAuth.instance;
 
   String get _profissionalId {
-    final user = _auth.currentUser;
-    return user?.uid ?? 'profissional_demo';
+    return widget.profissionalId ?? _auth.currentUser?.uid ?? 'profissional_demo';
   }
+
+  bool get _isOwner =>
+      widget.profissionalId == null || widget.profissionalId == _auth.currentUser?.uid;
 
   @override
   Widget build(BuildContext context) {
@@ -53,20 +59,85 @@ class _HomeProfissionalPageState extends State<HomeProfissionalPage> {
           appBar: AppBar(
             title: const Text('Perfil Profissional'),
             backgroundColor: Colors.red,
-            actions: [
-              IconButton(
-                icon: const Icon(Icons.logout, color: Colors.white),
-                onPressed: () {
-                  Navigator.pushReplacement(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => const LoginPage(userType: 'Profissional'),
+            actions: _isOwner
+                ? [
+                    IconButton(
+                      icon: const Icon(Icons.logout, color: Colors.white),
+                      onPressed: () {
+                        Navigator.pushReplacement(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => const LoginPage(userType: 'Profissional'),
+                          ),
+                        );
+                      },
                     ),
-                  );
-                },
-              ),
-            ],
+                  ]
+                : null,
           ),
+          drawer: _isOwner
+              ? Drawer(
+                  child: ListView(
+                    padding: EdgeInsets.zero,
+                    children: [
+                      DrawerHeader(
+                        decoration: BoxDecoration(color: Colors.red.shade700),
+                        child: const Align(
+                          alignment: Alignment.bottomLeft,
+                          child: Text(
+                            'Menu',
+                            style: TextStyle(
+                              color: Colors.white,
+                              fontSize: 24,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                        ),
+                      ),
+                      ListTile(
+                        leading: const Icon(Icons.home, color: Colors.red),
+                        title: const Text(
+                          'Home',
+                          style: TextStyle(fontWeight: FontWeight.bold),
+                        ),
+                        onTap: () => Navigator.pop(context),
+                      ),
+                      ListTile(
+                        leading: const Icon(Icons.people, color: Colors.red),
+                        title: const Text(
+                          'Minha Rede',
+                          style: TextStyle(fontWeight: FontWeight.bold),
+                        ),
+                        onTap: () {
+                          Navigator.pop(context);
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => const MinhaRedePage(),
+                            ),
+                          );
+                        },
+                      ),
+                      ListTile(
+                        leading: const Icon(Icons.chat, color: Colors.red),
+                        title: const Text(
+                          'Chat',
+                          style: TextStyle(fontWeight: FontWeight.bold),
+                        ),
+                        onTap: () {
+                          Navigator.pop(context);
+                          Navigator.push(
+                            context,
+                            MaterialPageRoute(
+                              builder: (_) => const ConversationsPage(),
+                            ),
+                          );
+                        },
+                      ),
+                    ],
+                  ),
+                )
+              : null,
           body: SingleChildScrollView(
             child: Column(
               children: [
@@ -178,31 +249,33 @@ class _HomeProfissionalPageState extends State<HomeProfissionalPage> {
                         ),
                       ],
                       const SizedBox(height: 16),
-                      Align(
-                        alignment: Alignment.centerLeft,
-                        child: ElevatedButton.icon(
-                          onPressed: () {
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (_) => const EditarPerfilProfissionalPage(),
+                      if (_isOwner) ...[
+                        Align(
+                          alignment: Alignment.centerLeft,
+                          child: ElevatedButton.icon(
+                            onPressed: () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) => const EditarPerfilProfissionalPage(),
+                                ),
+                              );
+                            },
+                            icon: const Icon(Icons.edit, color: Colors.white),
+                            label: const Text(
+                              "Editar Perfil",
+                              style: TextStyle(color: Colors.white),
+                            ),
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.red,
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
                               ),
-                            );
-                          },
-                          icon: const Icon(Icons.edit, color: Colors.white),
-                          label: const Text(
-                            "Editar Perfil",
-                            style: TextStyle(color: Colors.white),
-                          ),
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: Colors.red,
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12),
                             ),
                           ),
                         ),
-                      ),
-                      const SizedBox(height: 16),
+                        const SizedBox(height: 16),
+                      ],
                     ],
                   ),
                 ),
