@@ -1,15 +1,106 @@
 // firestore.rules
 rules_version = '2';
-
 service cloud.firestore {
   match /databases/{database}/documents {
-    // Permite tudo (apenas em DEV)
+
+    // --- Helpers ---
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    // isOwner: compara request.auth.uid com o id passado (sem tipos na assinatura)
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    // ---------------------------------------------------------
+    // Notifications
+    // Recomendo padrão: cada notificação tem `receiverId` (destinatário)
+    // e `senderId` (quem criou). Ajuste o cliente para usar esses campos.
+    // ---------------------------------------------------------
+    match /notifications/{notificationId} {
+      // Criação: permitimos que o remetente crie notifications para outro (senderId == auth.uid)
+      allow create: if isSignedIn()
+        && request.resource.data.senderId == request.auth.uid
+        // receiverId deve existir e ser string
+        && request.resource.data.receiverId is string;
+
+      // Ler: somente quem é destinatário (receiverId) pode ler suas notificações
+      allow read: if isSignedIn() && resource.data.receiverId == request.auth.uid;
+
+      // Atualizar / deletar: somente destinatário (ou você pode permitir sender em casos específicos)
+      allow update, delete: if isSignedIn() && resource.data.receiverId == request.auth.uid;
+    }
+
+    // ---------------------------------------------------------
+    // Conversations e mensagens
+    // Razoável: somente participantes podem ler/escrever.
+    // Assume que conversation doc tem campo `users`: lista com dois UIDs.
+    // ---------------------------------------------------------
+    match /conversations/{conversationId} {
+      // criação: o usuário deve estar na lista users do documento enviado
+      allow create: if isSignedIn()
+        && request.resource.data.users != null
+        && request.auth.uid in request.resource.data.users;
+
+      // leitura/atualização/exclusão: somente participantes
+      allow read, update, delete: if isSignedIn()
+        && resource.data.users != null
+        && request.auth.uid in resource.data.users;
+
+      match /messages/{messageId} {
+        allow create, read: if isSignedIn()
+          && exists(/databases/$(database)/documents/conversations/$(conversationId))
+          && request.auth.uid in get(/databases/$(database)/documents/conversations/$(conversationId)).data.users;
+
+        allow update, delete: if isSignedIn()
+          && resource.data.senderId == request.auth.uid;
+      }
+    }
+
+    // ---------------------------------------------------------
+    // Connections (minha_rede)
+    // Permitir leitura/escrita somente se o usuário for um dos envolvidos na conexão.
+    // Supõe que cada documento tem campos: usuarioId, profissionalId, academiaId.
+    // ---------------------------------------------------------
+    match /connections/{connectionId} {
+      allow create: if isSignedIn()
+        && request.resource.data.usuarioId is string
+        && (request.resource.data.profissionalId is string || request.resource.data.academiaId is string);
+      allow read, update, delete: if isSignedIn() && (
+        request.auth.uid == resource.data.usuarioId ||
+        request.auth.uid == resource.data.profissionalId ||
+        request.auth.uid == resource.data.academiaId
+      );
+    }
+
+    // Posts: leitura pública, escrita apenas autenticado
+    match /posts/{postId} {
+      allow read: if true;
+      allow create: if isSignedIn();
+      // update/delete somente autor (assumindo campo authorId)
+      allow update, delete: if isSignedIn() && resource.data.authorId == request.auth.uid;
+    }
+
+    // Perfis
+    match /academias/{academiaId} {
+      allow read: if true;
+      allow write: if isOwner(academiaId);
+    }
+
+    match /professionals/{profissionalId} {
+      allow read: if true;
+      allow write: if isOwner(profissionalId);
+    }
+
+    match /users/{userId} {
+      allow read: if isSignedIn();
+      allow write: if isOwner(userId);
+    }
+
+    // Demais caminhos negados por padrão
     match /{document=**} {
-      allow read, write: if true;
+      allow read, write: if false;
     }
   }
 }
-
-
-
-

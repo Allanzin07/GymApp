@@ -21,7 +21,6 @@ class ChatPage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     // Em mobile/pequenas larguras, ChatPage abre em tela inteira.
-    final theme = Theme.of(context);
     return Scaffold(
       appBar: AppBar(
         backgroundColor: Colors.red,
@@ -107,6 +106,9 @@ class _ChatPanelState extends State<ChatPanel> {
         _conversationId = id;
         _isCreating = false;
       });
+      if (id != null) {
+        await _chatService.markConversationRead(id);
+      }
     }
   }
 
@@ -213,6 +215,9 @@ class _ChatPanelState extends State<ChatPanel> {
                 return const Center(child: CircularProgressIndicator());
               }
               final docs = snapshot.data?.docs ?? [];
+              if (_conversationId != null) {
+                _chatService.markConversationRead(_conversationId!);
+              }
               if (docs.isEmpty) {
                 return Center(
                   child: Text('Nenhuma mensagem ainda. Comece a conversa!', style: Theme.of(context).textTheme.bodyMedium),

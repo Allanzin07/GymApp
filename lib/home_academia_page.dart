@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
@@ -7,6 +8,8 @@ import 'login_page.dart';
 import 'post_feed_widget.dart';
 import 'minha_rede_page.dart';
 import 'conversations_page.dart';
+import 'chat_page.dart';
+import 'notifications_button.dart';
 
 class HomeAcademiaPage extends StatefulWidget {
   final String? academiaId;
@@ -27,6 +30,114 @@ class _HomeAcademiaPageState extends State<HomeAcademiaPage> {
 
   bool get _isOwner =>
       widget.academiaId == null || widget.academiaId == _auth.currentUser?.uid;
+
+  Future<void> _connectWithAcademia() async {
+    final currentUser = _auth.currentUser;
+    if (currentUser == null) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Faça login para se conectar.')),
+      );
+      return;
+    }
+
+    try {
+      final connectionsRef = _firestore.collection('connections');
+      final existing = await connectionsRef
+          .where('usuarioId', isEqualTo: currentUser.uid)
+          .where('academiaId', isEqualTo: _academiaId)
+          .limit(1)
+          .get();
+
+      if (existing.docs.isNotEmpty) {
+        final doc = existing.docs.first;
+        final data = doc.data();
+        final currentStatus = (data['status'] as String?) ?? 'pending';
+        if (!data.containsKey('status')) {
+          await doc.reference.set({'status': 'pending'}, SetOptions(merge: true));
+        }
+        if (!mounted) return;
+        final message = currentStatus == 'active'
+            ? 'Você já está conectado a esta academia.'
+            : 'Aguardando aprovação desta academia.';
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+        return;
+      }
+
+      await connectionsRef.add({
+        'usuarioId': currentUser.uid,
+        'academiaId': _academiaId,
+        'status': 'pending',
+        'isActiveForUsuario': true,
+        'isActiveForAcademia': false,
+        'vinculadoEm': FieldValue.serverTimestamp(),
+      });
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Solicitação registrada! Verifique sua rede.')),
+      );
+
+      Navigator.push(
+        context,
+        MaterialPageRoute(builder: (_) => const MinhaRedePage()),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Não foi possível conectar: $e')),
+      );
+    }
+  }
+
+  void _openChat({
+    required String participantName,
+    String? participantPhotoUrl,
+  }) {
+    final size = MediaQuery.of(context).size;
+    final isWide = kIsWeb || size.width >= 900;
+
+    if (isWide) {
+      showDialog(
+        context: context,
+        barrierDismissible: true,
+        builder: (dialogContext) {
+          return Dialog(
+            insetPadding: const EdgeInsets.all(16),
+            backgroundColor: Colors.transparent,
+            child: Align(
+              alignment: Alignment.bottomRight,
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 420, maxHeight: 600),
+                child: Material(
+                  borderRadius: BorderRadius.circular(16),
+                  clipBehavior: Clip.antiAlias,
+                  elevation: 8,
+                  child: ChatPanel(
+                    participantId: _academiaId,
+                    participantName: participantName,
+                    participantPhotoUrl: participantPhotoUrl,
+                    onClose: () => Navigator.of(dialogContext).pop(),
+                  ),
+                ),
+              ),
+            ),
+          );
+        },
+      );
+    } else {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => ChatPage(
+            otherUserId: _academiaId,
+            otherUserName: participantName,
+            otherUserPhotoUrl: participantPhotoUrl,
+          ),
+        ),
+      );
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -61,6 +172,8 @@ class _HomeAcademiaPageState extends State<HomeAcademiaPage> {
             backgroundColor: Colors.red,
             actions: _isOwner
                 ? [
+                    NotificationsButton(
+                        currentUserId: FirebaseAuth.instance.currentUser?.uid),
                     IconButton(
                       icon: const Icon(Icons.logout, color: Colors.white),
                       tooltip: 'Sair',
@@ -235,6 +348,44 @@ class _HomeAcademiaPageState extends State<HomeAcademiaPage> {
                           ],
                         ),
                       const SizedBox(height: 16),
+                      if (!_isOwner) ...[
+                        Wrap(
+                          spacing: 12,
+                          runSpacing: 8,
+                          children: [
+                            ElevatedButton.icon(
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.red,
+                                foregroundColor: Colors.white,
+                                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                              ),
+                              onPressed: _connectWithAcademia,
+                              icon: const Icon(Icons.link),
+                              label: const Text('Conectar-se'),
+                            ),
+                            OutlinedButton.icon(
+                              style: OutlinedButton.styleFrom(
+                                foregroundColor: Colors.red.shade700,
+                                side: BorderSide(color: Colors.red.shade300, width: 1.5),
+                                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                ),
+                              ),
+                              onPressed: () => _openChat(
+                                participantName: nome,
+                                participantPhotoUrl: fotoPerfilUrl,
+                              ),
+                              icon: const Icon(Icons.chat_bubble_outline),
+                              label: const Text('Enviar Mensagem'),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 16),
+                      ],
                       if (_isOwner) ...[
                         Align(
                           alignment: Alignment.centerLeft,

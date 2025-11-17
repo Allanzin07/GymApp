@@ -14,11 +14,13 @@ class MinhaRedePage extends StatefulWidget {
 class _ConnectionRowData {
   _ConnectionRowData({
     required this.partner,
-    required this.connection,
+    required this.connectionDoc,
   });
 
   final Map<String, dynamic> partner;
-  final Map<String, dynamic> connection;
+  final DocumentSnapshot<Map<String, dynamic>> connectionDoc;
+
+  Map<String, dynamic> get connection => connectionDoc.data() ?? {};
 }
 
 class _MinhaRedePageState extends State<MinhaRedePage> {
@@ -52,19 +54,40 @@ class _MinhaRedePageState extends State<MinhaRedePage> {
     }
 
     try {
-      final doc =
+      String? tipo;
+      final userDoc =
           await _firestore.collection('users').doc(currentUser.uid).get();
+      if (userDoc.exists) {
+        tipo = userDoc.data()?['tipo'] as String?;
+      }
 
-      if (!doc.exists) {
+      if (tipo == null) {
+        final profDoc =
+            await _firestore.collection('professionals').doc(currentUser.uid).get();
+        if (profDoc.exists) {
+          tipo = 'profissional';
+        }
+      }
+
+      if (tipo == null) {
+        final acadDoc =
+            await _firestore.collection('academias').doc(currentUser.uid).get();
+        if (acadDoc.exists) {
+          tipo = 'academia';
+        }
+      }
+
+      if (tipo == null) {
         setState(() {
-          _userLoadError = 'Perfil não encontrado. Atualize seus dados.';
+          _userLoadError =
+              'Perfil não encontrado nas coleções esperadas. Verifique seus dados.';
           _isLoadingUser = false;
         });
         return;
       }
 
       setState(() {
-        _userType = doc.data()?['tipo'] as String?;
+        _userType = tipo;
         _userId = currentUser.uid;
         _isLoadingUser = false;
       });
@@ -104,16 +127,40 @@ class _MinhaRedePageState extends State<MinhaRedePage> {
     }
 
     try {
+      // 1) users
       final partnerDoc =
           await _firestore.collection('users').doc(partnerId).get();
-
-      if (!partnerDoc.exists) return null;
-
-      final data = partnerDoc.data();
-      if (data != null) {
-        _partnerCache[partnerId] = data;
+      if (partnerDoc.exists) {
+        final data = partnerDoc.data();
+        if (data != null) {
+          _partnerCache[partnerId] = data;
+          return data;
+        }
       }
-      return data;
+
+      // 2) professionals
+      final profDoc =
+          await _firestore.collection('professionals').doc(partnerId).get();
+      if (profDoc.exists) {
+        final data = profDoc.data();
+        if (data != null) {
+          _partnerCache[partnerId] = data;
+          return data;
+        }
+      }
+
+      // 3) academias
+      final gymDoc =
+          await _firestore.collection('academias').doc(partnerId).get();
+      if (gymDoc.exists) {
+        final data = gymDoc.data();
+        if (data != null) {
+          _partnerCache[partnerId] = data;
+          return data;
+        }
+      }
+
+      return null;
     } catch (_) {
       return null;
     }
@@ -178,19 +225,17 @@ class _MinhaRedePageState extends State<MinhaRedePage> {
           return _buildMessage('Nenhuma conexão encontrada.');
         }
 
-        final connectionData =
-            docs.map((doc) => doc.data()).toList(growable: false);
-
         return FutureBuilder<List<_ConnectionRowData?>>(
           future: Future.wait(
-            connectionData.map((connection) async {
-              final partnerId = _resolverParceiroId(connection);
+            docs.map((doc) async {
+              final data = doc.data();
+              final partnerId = _resolverParceiroId(data);
               if (partnerId == null) return null;
               final partner = await _buscarParceiro(partnerId);
               if (partner == null) return null;
               return _ConnectionRowData(
                 partner: partner,
-                connection: connection,
+                connectionDoc: doc,
               );
             }),
           ),
@@ -238,6 +283,29 @@ class _MinhaRedePageState extends State<MinhaRedePage> {
   }
 
   Widget _buildConnectionsTable(List<_ConnectionRowData> rows) {
+    final isManager = _userType == 'profissional' || _userType == 'academia';
+
+    final filteredRows = rows.where((row) {
+      final connection = row.connection;
+      if (_userType == 'profissional') {
+        final flag = connection['isActiveForProfissional'];
+        return flag == true;
+      }
+      if (_userType == 'academia') {
+        final flag = connection['isActiveForAcademia'];
+        return flag == true;
+      }
+      // usuario
+      final flag = connection['isActiveForUsuario'];
+      return flag == true;
+    }).toList();
+
+    if (filteredRows.isEmpty) {
+      return isManager
+          ? _buildMessage('Nenhuma conexão ativa ainda.')
+          : _buildMessage('Nenhuma conexão.\nFaça uma solicitação em um perfil para aparecer aqui.');
+    }
+
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16),
       child: Card(
@@ -273,13 +341,14 @@ class _MinhaRedePageState extends State<MinhaRedePage> {
                   headingRowColor: MaterialStateColor.resolveWith(
                     (states) => Colors.red.shade50,
                   ),
-                  columns: const [
-                    DataColumn(label: Text('Nome')),
-                    DataColumn(label: Text('CPF')),
-                    DataColumn(label: Text('Telefone')),
-                    DataColumn(label: Text('Data de vinculação')),
+                  columns: [
+                    const DataColumn(label: Text('Nome')),
+                    const DataColumn(label: Text('Contato')),
+                    const DataColumn(label: Text('Status')),
+                    const DataColumn(label: Text('Vínculo')),
+                    if (isManager) const DataColumn(label: Text('Ações')),
                   ],
-                  rows: rows.map(_buildDataRow).toList(),
+                  rows: filteredRows.map((row) => _buildDataRow(row, isManager)).toList(),
                 ),
               ),
             ],
@@ -289,29 +358,94 @@ class _MinhaRedePageState extends State<MinhaRedePage> {
     );
   }
 
-  DataRow _buildDataRow(_ConnectionRowData data) {
+  DataRow _buildDataRow(_ConnectionRowData data, bool isManager) {
     final partner = data.partner;
     final connection = data.connection;
 
     final nome = partner['nome'] as String? ?? 'Nome não informado';
-    final cpf = partner['cpf'] as String? ??
-        partner['documento'] as String? ??
-        'Não informado';
     final telefone = partner['telefone'] as String? ??
         partner['whatsapp'] as String? ??
         partner['phone'] as String? ??
         'Não informado';
     final vinculo = _formatDate(_extractConnectionDate(connection)) ??
         'Data indisponível';
+    final status = (connection['status'] as String?) ?? 'pending';
+    final statusLabel =
+        status == 'active' ? 'Conectado' : status == 'pending' ? 'Pendente' : status;
+    final statusColor = status == 'active'
+        ? Colors.green
+        : status == 'pending'
+            ? Colors.orange
+            : Colors.grey;
 
-    return DataRow(
-      cells: [
-        DataCell(Text(nome)),
-        DataCell(Text(cpf)),
-        DataCell(Text(telefone)),
-        DataCell(Text(vinculo)),
-      ],
-    );
+    final cells = <DataCell>[
+      DataCell(Text(nome)),
+      DataCell(Text(telefone)),
+      DataCell(
+        Chip(
+          avatar: Icon(
+            status == 'active' ? Icons.check_circle : Icons.hourglass_top,
+            color: Colors.white,
+            size: 16,
+          ),
+          label: Text(
+            statusLabel,
+            style: const TextStyle(color: Colors.white),
+          ),
+          backgroundColor: statusColor,
+        ),
+      ),
+      DataCell(Text(vinculo)),
+    ];
+
+    if (isManager) {
+      Widget actionWidget;
+      if (status == 'pending') {
+        actionWidget = ElevatedButton(
+          onPressed: () => _aceitarSolicitacao(data),
+          style: ElevatedButton.styleFrom(
+            backgroundColor: Colors.red,
+            foregroundColor: Colors.white,
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+          ),
+          child: const Text('Aceitar'),
+        );
+      } else {
+        actionWidget = const Text(
+          'Ativo',
+          style: TextStyle(color: Colors.green),
+        );
+      }
+      cells.add(DataCell(actionWidget));
+    }
+
+    return DataRow(cells: cells);
+  }
+
+  Future<void> _aceitarSolicitacao(_ConnectionRowData data) async {
+    try {
+      await data.connectionDoc.reference.update({
+        'status': 'active',
+        'aceitoEm': FieldValue.serverTimestamp(),
+        'isActiveForProfissional': _userType == 'profissional' ? true : FieldValue.delete(),
+        'isActiveForAcademia': _userType == 'academia' ? true : FieldValue.delete(),
+        'isActiveForUsuario': true,
+      });
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Solicitação aceita com sucesso.')),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Erro ao aceitar solicitação: $e')),
+        );
+      }
+    }
   }
 
   DateTime? _extractConnectionDate(Map<String, dynamic> connection) {

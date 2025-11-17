@@ -1,0 +1,187 @@
+// lib/notifications_panel.dart
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/material.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'notifications_service.dart';
+
+// IMPORTS para navegação — ajuste caminhos se necessário
+import 'chat_page.dart';
+import 'conversations_page.dart';
+import 'minha_rede_page.dart';
+
+class NotificationsPanel extends StatefulWidget {
+  final String? currentUserId;
+
+  const NotificationsPanel({super.key, this.currentUserId});
+
+  @override
+  State<NotificationsPanel> createState() => _NotificationsPanelState();
+}
+
+class _NotificationsPanelState extends State<NotificationsPanel> {
+  final NotificationsService _service = NotificationsService();
+  String get _uid => widget.currentUserId ?? FirebaseAuth.instance.currentUser?.uid ?? '';
+
+  IconData _iconForType(String type) {
+    switch (type) {
+      case 'message':
+        return Icons.chat_bubble;
+      case 'connection':
+        return Icons.person_add;
+      case 'system':
+      default:
+        return Icons.notifications;
+    }
+  }
+
+  Color _iconColor(String type) {
+    return type == 'message' ? Colors.red : Colors.red.shade400;
+  }
+
+  void _handleTap(DocumentSnapshot<Map<String, dynamic>> doc) async {
+    final data = doc.data() ?? {};
+    final type = data['type'] as String? ?? 'system';
+    final payload = (data['data'] as Map<String, dynamic>?) ?? {};
+
+    // Marca como lida
+    try {
+      await _service.markAsRead(doc.id);
+    } catch (_) {}
+
+    // Navega conforme tipo
+    if (type == 'message') {
+      final otherId = payload['otherUserId'] as String? ?? payload['from'] as String?;
+      final conversationId = payload['conversationId'] as String?;
+      final otherName = payload['otherUserName'] as String?;
+      final otherPhoto = payload['otherUserPhoto'] as String?;
+
+      if (otherId != null) {
+        // Abre ChatPage diretamente
+        Navigator.push(context, MaterialPageRoute(builder: (_) => ChatPage(
+          otherUserId: otherId,
+          otherUserName: otherName ?? 'Contato',
+          otherUserPhotoUrl: otherPhoto,
+        )));
+        return;
+      }
+
+      if (conversationId != null) {
+        // Se não tiver otherId, abre a lista de conversas
+        Navigator.push(context, MaterialPageRoute(builder: (_) => const ConversationsPage()));
+        return;
+      }
+
+      // fallback
+      Navigator.push(context, MaterialPageRoute(builder: (_) => const ConversationsPage()));
+      return;
+    }
+
+    if (type == 'connection') {
+      // Abre página MinhaRede para gerenciar solicitações
+      Navigator.push(context, MaterialPageRoute(builder: (_) => const MinhaRedePage()));
+      return;
+    }
+
+    // Outras notificações: abrir conversas por padrão
+    Navigator.pop(context); // fecha modal se houver
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_uid.isEmpty) {
+      return Center(child: Padding(
+        padding: const EdgeInsets.all(24),
+        child: Text('Faça login para ver notificações.', style: Theme.of(context).textTheme.bodyLarge),
+      ));
+    }
+
+    return Container(
+      color: Colors.white,
+      child: Column(
+        children: [
+          // Cabeçalho fixo (apenas quando o widget estiver sozinho; se for usado dentro do Dialog, não estraga)
+          Container(
+            color: Colors.red,
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+            child: Row(
+              children: [
+                const Icon(Icons.notifications, color: Colors.white),
+                const SizedBox(width: 12),
+                Text('Notificações', style: Theme.of(context).textTheme.titleMedium?.copyWith(color: Colors.white, fontWeight: FontWeight.bold)),
+                const Spacer(),
+                TextButton(
+                  onPressed: () => _service.markAllAsRead(_uid),
+                  child: const Text('Marcar todas como lidas', style: TextStyle(color: Colors.white70, fontSize: 13)),
+                ),
+              ],
+            ),
+          ),
+
+          Expanded(
+            child: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+              stream: _service.streamNotificationsForUser(_uid),
+              builder: (context, snapshot) {
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return const Center(child: CircularProgressIndicator(color: Colors.red));
+                }
+                final docs = snapshot.data?.docs ?? [];
+                if (docs.isEmpty) {
+                  return Center(child: Text('Sem notificações', style: TextStyle(color: Colors.grey[600])));
+                }
+
+                return ListView.separated(
+                  padding: const EdgeInsets.symmetric(vertical: 8),
+                  separatorBuilder: (_, __) => Divider(height: 0, color: Colors.grey.shade200),
+                  itemCount: docs.length,
+                  itemBuilder: (context, index) {
+                    final doc = docs[index];
+                    final d = doc.data()!;
+                    final isRead = d['isRead'] as bool? ?? false;
+                    final type = d['type'] as String? ?? 'system';
+                    final title = d['title'] as String? ?? '';
+                    final body = d['body'] as String? ?? '';
+                    final created = (d['createdAt'] as Timestamp?)?.toDate();
+
+                    return ListTile(
+                      onTap: () => _handleTap(doc),
+                      tileColor: isRead ? Colors.white : Colors.red.shade50,
+                      leading: CircleAvatar(
+                        backgroundColor: Colors.white,
+                        child: Icon(_iconForType(type), color: _iconColor(type)),
+                      ),
+                      title: Text(title, style: TextStyle(fontWeight: isRead ? FontWeight.w500 : FontWeight.bold)),
+                      subtitle: Text(body, maxLines: 2, overflow: TextOverflow.ellipsis),
+                      trailing: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          if (created != null)
+                            Text(
+                              _prettyTimeAgo(created),
+                              style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Colors.grey[600]),
+                            ),
+                          const SizedBox(height: 6),
+                          if (!isRead)
+                            Container(width: 8, height: 8, decoration: const BoxDecoration(color: Colors.red, shape: BoxShape.circle)),
+                        ],
+                      ),
+                    );
+                  },
+                );
+              },
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _prettyTimeAgo(DateTime dt) {
+    final now = DateTime.now();
+    final diff = now.difference(dt);
+    if (diff.inMinutes < 1) return 'agora';
+    if (diff.inMinutes < 60) return '${diff.inMinutes}m';
+    if (diff.inHours < 24) return '${diff.inHours}h';
+    if (diff.inDays < 7) return '${diff.inDays}d';
+    return '${dt.day.toString().padLeft(2,'0')}/${dt.month.toString().padLeft(2,'0')}/${dt.year}';
+  }
+}

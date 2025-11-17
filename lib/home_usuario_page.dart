@@ -8,6 +8,7 @@ import 'minha_rede_page.dart';
 import 'home_academia_page.dart';
 import 'home_profissional_page.dart';
 import 'conversations_page.dart';
+import 'notifications_button.dart';
 
 class HomeUsuarioPage extends StatefulWidget {
   final bool guestMode;
@@ -237,6 +238,7 @@ class _HomeUsuarioPageState extends State<HomeUsuarioPage> {
         title: const Text('Bem-vindo'),
         backgroundColor: Colors.red,
         actions: [
+          NotificationsButton(currentUserId: FirebaseAuth.instance.currentUser?.uid),
           IconButton(
             icon: const Icon(Icons.logout, color: Colors.white),
             tooltip: 'Sair',

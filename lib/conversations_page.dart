@@ -140,6 +140,9 @@ class _ConversationsPageState extends State<ConversationsPage> {
         final last = doc['lastMessage'] as String? ?? '';
         final updated = doc['updatedAt'] as Timestamp?;
         final isSelected = highlightSelection && doc.id == _selectedConversationId;
+        final unreadList =
+            (doc.data()['unreadBy'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? <String>[];
+        final hasUnread = unreadList.contains(_me);
 
         return FutureBuilder<Map<String, dynamic>>(
           future: _chatService.fetchProfile(otherId),
@@ -158,7 +161,26 @@ class _ConversationsPageState extends State<ConversationsPage> {
               ),
               title: Text(title, style: TextStyle(fontWeight: FontWeight.w600)),
               subtitle: Text(last.isEmpty ? 'Conversa iniciada' : last, maxLines: 1, overflow: TextOverflow.ellipsis),
-              trailing: Text(_formatTimestamp(updated), style: Theme.of(context).textTheme.bodySmall),
+              trailing: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  Text(
+                    _formatTimestamp(updated),
+                    style: Theme.of(context).textTheme.bodySmall,
+                  ),
+                  if (hasUnread)
+                    Container(
+                      margin: const EdgeInsets.only(top: 4),
+                      width: 10,
+                      height: 10,
+                      decoration: const BoxDecoration(
+                        color: Colors.red,
+                        shape: BoxShape.circle,
+                      ),
+                    ),
+                ],
+              ),
               onTap: () async {
                 if (highlightSelection) {
                   final prof = await _chatService.fetchProfile(otherId);
@@ -167,10 +189,12 @@ class _ConversationsPageState extends State<ConversationsPage> {
                     _selectedOtherUserId = otherId;
                     _selectedProfile = prof;
                   });
+                  await _chatService.markConversationRead(doc.id);
                   return;
                 }
                 // narrow: open full ChatPage
                 final prof = await _chatService.fetchProfile(otherId);
+                await _chatService.markConversationRead(doc.id);
                 if (!mounted) return;
                 Navigator.push(context, MaterialPageRoute(builder: (_) {
                   return ChatPage(
@@ -197,6 +221,7 @@ class _ConversationsPageState extends State<ConversationsPage> {
       _selectedOtherUserId = otherId;
       _selectedProfile = prof;
     });
+    await _chatService.markConversationRead(doc.id);
   }
 
   String _formatTimestamp(Timestamp? ts) {
