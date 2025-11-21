@@ -3,183 +3,151 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 
-/// Serviço simples para gerenciar conversas.
-/// - getOrCreateConversation: garante a existência da conversa e retorna o id.
-/// - user cache: evita múltiplas leituras ao buscar perfis para a lista de conversas.
 class ChatService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
 
-  // cache simples de perfis (userId -> Map)
   final Map<String, Map<String, dynamic>> _profileCache = {};
 
   String? get currentUid => _auth.currentUser?.uid;
 
-  /// Retorna conversationId formado por dois UIDs ordenados: uidA_uidB
+  /// Gera ID único baseado nos dois participantes
   String conversationIdFor(String uidA, String uidB) {
     final ids = [uidA, uidB]..sort();
     return '${ids[0]}_${ids[1]}';
   }
 
-  /// Cria a conversa se não existir e retorna o conversationId
+  /// Cria conversa se não existir
   Future<String?> getOrCreateConversation(String otherUserId) async {
-    final me = currentUid;
-    if (me == null) {
-      debugPrint('ChatService: Usuário não autenticado');
-      return null;
-    }
+    final currentUser = _auth.currentUser;
+    if (currentUser == null) return null;
 
-    if (otherUserId.isEmpty) {
-      debugPrint('ChatService: otherUserId vazio');
-      return null;
-    }
+    final uid = currentUser.uid;
 
-    try {
-      final conversationId = conversationIdFor(me, otherUserId);
-      final ref = _firestore.collection('conversations').doc(conversationId);
+    final existing = await _firestore
+        .collection('conversations')
+        .where('users', arrayContains: uid)
+        .get();
 
-      final snap = await ref.get();
-      final participants = [me, otherUserId]..sort();
-
-      if (!snap.exists) {
-        // Cria nova conversa
-        await ref.set({
-          'users': participants,
-          'lastMessage': '',
-          'updatedAt': FieldValue.serverTimestamp(),
-          'createdAt': FieldValue.serverTimestamp(),
-          'unreadBy': <String>[],
-        });
-        debugPrint('ChatService: Conversa criada: $conversationId');
-      } else {
-        // Garante que a lista users esteja atualizada (merge)
-        await ref.set({'users': participants}, SetOptions(merge: true));
-        debugPrint('ChatService: Conversa existente atualizada: $conversationId');
+    for (var doc in existing.docs) {
+      final users = List<String>.from(doc['users'] ?? []);
+      if (users.contains(otherUserId)) {
+        return doc.id;
       }
-      return conversationId;
-    } catch (e) {
-      debugPrint('ChatService: Erro ao criar/buscar conversa: $e');
-      return null;
     }
+
+    final doc = await _firestore.collection('conversations').add({
+      'users': [uid, otherUserId],
+      'createdAt': FieldValue.serverTimestamp(),
+      'lastMessage': '',
+      'updatedAt': FieldValue.serverTimestamp(),
+      'unreadBy': [],
+      'unreadCount': {
+        uid: 0,
+        otherUserId: 0,
+      }
+    });
+
+    return doc.id;
   }
 
-  /// Adiciona uma mensagem e atualiza lastMessage/updatedAt
+  /// ENVIA MENSAGEM E ATUALIZA CONTADOR CORRETAMENTE
   Future<void> sendMessage(String conversationId, Map<String, dynamic> messageData) async {
+    final senderId = messageData['senderId']?.toString();
+    if (senderId == null) return;
+
     final convRef = _firestore.collection('conversations').doc(conversationId);
     final messagesRef = convRef.collection('messages');
+
     await messagesRef.add(messageData);
 
-     final senderId = messageData['senderId']?.toString();
-    String? otherId;
-     List<String> participants = [];
-     try {
-       final snapshot = await convRef.get();
-       final users = snapshot.data()?['users'] as List<dynamic>? ?? [];
-       participants = users.map((e) => e.toString()).toList();
-      otherId = participants.firstWhere(
-        (id) => id != senderId,
-        orElse: () => participants.isNotEmpty ? participants.first : '',
-      );
-     } catch (_) {}
+    final snapshot = await convRef.get();
+    final participants = List<String>.from(snapshot.data()?['users'] ?? []);
 
-     if (senderId != null) {
-       await convRef.set({
-         'unreadBy': FieldValue.arrayRemove([senderId]),
-       }, SetOptions(merge: true));
-     }
+    final receiverId = participants.firstWhere((id) => id != senderId);
 
-     final recipients = participants.where((id) => id != senderId).toList();
-     if (recipients.isNotEmpty) {
-       await convRef.set({
-         'unreadBy': FieldValue.arrayUnion(recipients),
-       }, SetOptions(merge: true));
-     }
-
-    await convRef.set({
+    // ✅ INCREMENTA NÃO LIDA PARA DESTINATÁRIO
+    await convRef.update({
       'lastSenderId': senderId,
-      'lastReceiverId': otherId,
+      'lastReceiverId': receiverId,
       'lastMessage': messageData['text'] ?? '',
       'updatedAt': FieldValue.serverTimestamp(),
-    }, SetOptions(merge: true));
+      'unreadBy': FieldValue.arrayUnion([receiverId]),
+      'unreadCount.$receiverId': FieldValue.increment(1),
+    });
   }
 
-  /// Marca a conversa como lida para o usuário atual.
+  /// MARCA COMO LIDA SOMENTE SE O USUÁRIO REALMENTE FOR DESTINATÁRIO
   Future<void> markConversationRead(String conversationId) async {
     final uid = currentUid;
     if (uid == null) return;
+
     final convRef = _firestore.collection('conversations').doc(conversationId);
-    await convRef.set({
+    final snap = await convRef.get();
+    if (!snap.exists) return;
+
+    final data = snap.data() ?? {};
+    final List unreadBy = data['unreadBy'] ?? [];
+
+    if (!unreadBy.contains(uid)) return; // ✅ só zera se realmente tiver pendência
+
+    await convRef.update({
       'unreadBy': FieldValue.arrayRemove([uid]),
-    }, SetOptions(merge: true));
+      'unreadCount.$uid': 0,
+    });
   }
 
-  /// Busca perfil do usuário em coleções comuns (users, professionals, academias).
-  /// Faz cache simples para reduzir leituras.
-  /// Normaliza os campos para garantir compatibilidade (name/nome, fotoPerfilUrl/fotoUrl).
+  /// BUSCA PERFIL COM CACHE
   Future<Map<String, dynamic>> fetchProfile(String userId) async {
     if (_profileCache.containsKey(userId)) return _profileCache[userId]!;
 
-    final firestore = _firestore;
-
     try {
-      // 1) users
-      final u = await firestore.collection('users').doc(userId).get();
-      if (u.exists) {
-        final data = Map<String, dynamic>.from(u.data()!);
-        // Normaliza campos: name -> nome, fotoPerfilUrl -> fotoUrl
+      final firestore = _firestore;
+
+      final userDoc = await firestore.collection('users').doc(userId).get();
+      if (userDoc.exists) {
+        final data = userDoc.data()!;
         final normalized = {
           'nome': data['nome'] ?? data['name'] ?? 'Usuário',
           'fotoUrl': data['fotoUrl'] ?? data['fotoPerfilUrl'] ?? '',
-          'email': data['email'] ?? '',
-          'whatsapp': data['whatsapp'] ?? data['telefone'] ?? '',
           ...data,
         };
         _profileCache[userId] = normalized;
         return normalized;
       }
 
-      // 2) professionals
-      final p = await firestore.collection('professionals').doc(userId).get();
-      if (p.exists) {
-        final data = Map<String, dynamic>.from(p.data()!);
-        // Normaliza campos
+      final profDoc = await firestore.collection('professionals').doc(userId).get();
+      if (profDoc.exists) {
+        final data = profDoc.data()!;
         final normalized = {
-          'nome': data['nome'] ?? data['name'] ?? 'Profissional',
+          'nome': data['nome'] ?? 'Profissional',
           'fotoUrl': data['fotoUrl'] ?? data['fotoPerfilUrl'] ?? '',
-          'email': data['email'] ?? '',
-          'whatsapp': data['whatsapp'] ?? data['telefone'] ?? '',
           ...data,
         };
         _profileCache[userId] = normalized;
         return normalized;
       }
 
-      // 3) academias
-      final g = await firestore.collection('academias').doc(userId).get();
-      if (g.exists) {
-        final data = Map<String, dynamic>.from(g.data()!);
-        // Normaliza campos
+      final acadDoc = await firestore.collection('academias').doc(userId).get();
+      if (acadDoc.exists) {
+        final data = acadDoc.data()!;
         final normalized = {
-          'nome': data['nome'] ?? data['name'] ?? 'Academia',
+          'nome': data['nome'] ?? 'Academia',
           'fotoUrl': data['fotoUrl'] ?? data['fotoPerfilUrl'] ?? '',
-          'email': data['email'] ?? '',
-          'whatsapp': data['whatsapp'] ?? data['telefone'] ?? '',
           ...data,
         };
         _profileCache[userId] = normalized;
         return normalized;
       }
     } catch (e) {
-      debugPrint('Erro ao buscar perfil de $userId: $e');
+      debugPrint('Erro ao buscar perfil: $e');
     }
 
-    // fallback minimal
     final fallback = {
       'nome': 'Contato',
-      'fotoUrl': null,
-      'email': '',
-      'whatsapp': '',
+      'fotoUrl': '',
     };
+
     _profileCache[userId] = fallback;
     return fallback;
   }

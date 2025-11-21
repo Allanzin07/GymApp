@@ -1,4 +1,3 @@
-// lib/conversations_page.dart
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
@@ -20,7 +19,6 @@ class _ConversationsPageState extends State<ConversationsPage> {
 
   String? get _me => _auth.currentUser?.uid;
 
-  // seleção local (apenas para layout amplo)
   String? _selectedConversationId;
   String? _selectedOtherUserId;
   Map<String, dynamic>? _selectedProfile;
@@ -40,7 +38,6 @@ class _ConversationsPageState extends State<ConversationsPage> {
     final stream = _firestore
         .collection('conversations')
         .where('users', arrayContains: _me)
-        .orderBy('updatedAt', descending: true)
         .snapshots();
 
     return Scaffold(
@@ -51,19 +48,32 @@ class _ConversationsPageState extends State<ConversationsPage> {
           if (snapshot.connectionState == ConnectionState.waiting) {
             return const Center(child: CircularProgressIndicator());
           }
+
           final docs = snapshot.data?.docs ?? [];
+
+          docs.sort((a, b) {
+            final ta = a.data().containsKey('updatedAt') ? a['updatedAt'] : a['createdAt'];
+            final tb = b.data().containsKey('updatedAt') ? b['updatedAt'] : b['createdAt'];
+            if (ta == null && tb == null) return 0;
+            if (ta == null) return 1;
+            if (tb == null) return -1;
+            return (tb as Timestamp).compareTo(ta as Timestamp);
+          });
+
           if (docs.isEmpty) {
             return Center(
               child: Padding(
                 padding: const EdgeInsets.all(24),
-                child: Text('Nenhuma conversa ainda. Inicie uma com um profissional ou academia.',
-                    textAlign: TextAlign.center, style: theme.textTheme.bodyLarge),
+                child: Text(
+                  'Nenhuma conversa ainda.\nInicie uma com um profissional ou academia.',
+                  textAlign: TextAlign.center,
+                  style: theme.textTheme.bodyLarge,
+                ),
               ),
             );
           }
 
-          // preselect first on wide layout
-          if (isWide && _selectedConversationId == null && docs.isNotEmpty) {
+          if (isWide && _selectedConversationId == null) {
             WidgetsBinding.instance.addPostFrameCallback((_) {
               _preselect(docs.first);
             });
@@ -85,41 +95,13 @@ class _ConversationsPageState extends State<ConversationsPage> {
         ),
         Expanded(
           child: _selectedConversationId != null && _selectedOtherUserId != null && _selectedProfile != null
-              ? Padding(
-                  padding: const EdgeInsets.all(20),
-                  child: Card(
-                    elevation: 6,
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                    child: ClipRRect(
-                      borderRadius: BorderRadius.circular(16),
-                      child: ChatPanel(
-                        participantId: _selectedOtherUserId!,
-                        participantName: _selectedProfile!['nome'] ?? 'Contato',
-                        participantPhotoUrl: _selectedProfile!['fotoUrl'] ?? _selectedProfile!['photoUrl'],
-                        showHeader: true,
-                        onClose: () {
-                          setState(() {
-                            _selectedConversationId = null;
-                            _selectedOtherUserId = null;
-                            _selectedProfile = null;
-                          });
-                        },
-                      ),
-                    ),
-                  ),
+              ? ChatPanel(
+                  participantId: _selectedOtherUserId!,
+                  participantName: _selectedProfile!['nome'] ?? 'Contato',
+                  participantPhotoUrl: _selectedProfile!['fotoUrl'] ?? _selectedProfile!['photoUrl'],
+                  showHeader: true,
                 )
-              : Center(
-                  child: Column(
-                    mainAxisAlignment: MainAxisAlignment.center,
-                    children: [
-                      Icon(Icons.chat_bubble_outline, size: 72, color: Colors.red.shade200),
-                      const SizedBox(height: 12),
-                      Text('Selecione uma conversa', style: Theme.of(context).textTheme.titleLarge),
-                      const SizedBox(height: 8),
-                      Text('Escolha um contato à esquerda para abrir o chat.', style: Theme.of(context).textTheme.bodyMedium),
-                    ],
-                  ),
-                ),
+              : const Center(child: Text('Selecione uma conversa')),
         ),
       ],
     );
@@ -132,17 +114,26 @@ class _ConversationsPageState extends State<ConversationsPage> {
   Widget _conversationsList(List<QueryDocumentSnapshot<Map<String, dynamic>>> docs, {required bool highlightSelection}) {
     return ListView.separated(
       itemCount: docs.length,
-      separatorBuilder: (_, __) => Divider(height: 0, color: Colors.grey.shade100),
+      separatorBuilder: (_, __) => Divider(height: 0, color: Colors.grey.shade200),
       itemBuilder: (context, index) {
         final doc = docs[index];
-        final users = (doc['users'] as List).map((e) => e.toString()).toList();
+        final data = doc.data();
+
+        final users = (data['users'] as List).map((e) => e.toString()).toList();
         final otherId = users.firstWhere((id) => id != _me);
-        final last = doc['lastMessage'] as String? ?? '';
-        final updated = doc['updatedAt'] as Timestamp?;
-        final isSelected = highlightSelection && doc.id == _selectedConversationId;
-        final unreadList =
-            (doc.data()['unreadBy'] as List<dynamic>?)?.map((e) => e.toString()).toList() ?? <String>[];
-        final hasUnread = unreadList.contains(_me);
+        final last = data['lastMessage'] as String? ?? '';
+
+        final List<String> unreadBy =
+            data.containsKey('unreadBy') ? List<String>.from(data['unreadBy']) : <String>[];
+        final bool hasUnread = unreadBy.contains(_me);
+
+        final Map<String, dynamic> unreadCountMap =
+            data.containsKey('unreadCount') ? Map<String, dynamic>.from(data['unreadCount']) : {};
+        int unreadCount = unreadCountMap[_me] ?? 0;
+
+        if (hasUnread && unreadCount == 0) {
+          unreadCount = 1;
+        }
 
         return FutureBuilder<Map<String, dynamic>>(
           future: _chatService.fetchProfile(otherId),
@@ -150,60 +141,85 @@ class _ConversationsPageState extends State<ConversationsPage> {
             final profile = snap.data;
             final title = profile?['nome'] ?? profile?['displayName'] ?? 'Contato';
             final photo = profile?['fotoUrl'] ?? profile?['photoUrl'];
-            return ListTile(
-              dense: true,
-              selected: isSelected,
-              selectedTileColor: Colors.red.shade50,
-              leading: CircleAvatar(
-                backgroundImage: (photo != null && photo.toString().isNotEmpty) ? NetworkImage(photo) : null,
-                backgroundColor: Colors.red.shade100,
-                child: (photo == null) ? const Icon(Icons.person, color: Colors.red) : null,
+
+            return Dismissible(
+              key: ValueKey(doc.id),
+              direction: DismissDirection.endToStart,
+              background: Container(
+                color: Colors.red,
+                alignment: Alignment.centerRight,
+                padding: const EdgeInsets.symmetric(horizontal: 20),
+                child: const Icon(Icons.delete, color: Colors.white),
               ),
-              title: Text(title, style: TextStyle(fontWeight: FontWeight.w600)),
-              subtitle: Text(last.isEmpty ? 'Conversa iniciada' : last, maxLines: 1, overflow: TextOverflow.ellipsis),
-              trailing: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  Text(
-                    _formatTimestamp(updated),
-                    style: Theme.of(context).textTheme.bodySmall,
+              confirmDismiss: (_) async {
+                return await showDialog<bool>(
+                  context: context,
+                  builder: (ctx) => AlertDialog(
+                    title: const Text('Excluir conversa'),
+                    content: const Text('Deseja realmente excluir esta conversa?'),
+                    actions: [
+                      TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancelar')),
+                      ElevatedButton(onPressed: () => Navigator.pop(ctx, true), child: const Text('Excluir')),
+                    ],
                   ),
-                  if (hasUnread)
-                    Container(
-                      margin: const EdgeInsets.only(top: 4),
-                      width: 10,
-                      height: 10,
-                      decoration: const BoxDecoration(
-                        color: Colors.red,
-                        shape: BoxShape.circle,
-                      ),
-                    ),
-                ],
-              ),
-              onTap: () async {
-                if (highlightSelection) {
-                  final prof = await _chatService.fetchProfile(otherId);
-                  setState(() {
-                    _selectedConversationId = doc.id;
-                    _selectedOtherUserId = otherId;
-                    _selectedProfile = prof;
-                  });
-                  await _chatService.markConversationRead(doc.id);
-                  return;
-                }
-                // narrow: open full ChatPage
-                final prof = await _chatService.fetchProfile(otherId);
-                await _chatService.markConversationRead(doc.id);
-                if (!mounted) return;
-                Navigator.push(context, MaterialPageRoute(builder: (_) {
-                  return ChatPage(
-                    otherUserId: otherId,
-                    otherUserName: prof['nome'] ?? 'Contato',
-                    otherUserPhotoUrl: prof['fotoUrl'] ?? prof['photoUrl'],
-                  );
-                }));
+                );
               },
+              onDismissed: (_) async {
+                await _firestore.collection('conversations').doc(doc.id).delete();
+              },
+              child: ListTile(
+                leading: Stack(
+  children: [
+    CircleAvatar(
+      backgroundImage: photo != null && photo.isNotEmpty ? NetworkImage(photo) : null,
+      backgroundColor: Colors.red.shade100,
+      child: photo == null ? const Icon(Icons.person, color: Colors.red) : null,
+    ),
+    if (unreadCount > 0)
+      Positioned(
+        right: -2,
+        top: -2,
+        child: Container(
+          padding: const EdgeInsets.all(4),
+          constraints: const BoxConstraints(minWidth: 18, minHeight: 18),
+          decoration: const BoxDecoration(
+            color: Colors.red,
+            shape: BoxShape.circle,
+          ),
+          child: Text(
+            unreadCount > 99 ? '99+' : unreadCount.toString(),
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 10,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+        ),
+      ),
+  ],
+),
+                title: Text(title, style: TextStyle(fontWeight: hasUnread ? FontWeight.bold : FontWeight.normal)),
+                subtitle: Text(last.isEmpty ? 'Conversa iniciada' : last, maxLines: 1, overflow: TextOverflow.ellipsis),
+                onTap: () async {
+                  await _chatService.markConversationRead(doc.id);
+                  if (!mounted) return;
+                  if (highlightSelection) {
+                    setState(() {
+                      _selectedConversationId = doc.id;
+                      _selectedOtherUserId = otherId;
+                      _selectedProfile = profile;
+                    });
+                    return;
+                  }
+                  Navigator.push(context, MaterialPageRoute(builder: (_) {
+                    return ChatPage(
+                      otherUserId: otherId,
+                      otherUserName: title,
+                      otherUserPhotoUrl: photo,
+                    );
+                  }));
+                },
+              ),
             );
           },
         );
@@ -212,7 +228,7 @@ class _ConversationsPageState extends State<ConversationsPage> {
   }
 
   Future<void> _preselect(QueryDocumentSnapshot<Map<String, dynamic>> doc) async {
-    final users = (doc['users'] as List).map((e) => e.toString()).toList();
+    final users = (doc.data()['users'] as List).map((e) => e.toString()).toList();
     final otherId = users.firstWhere((id) => id != _me);
     final prof = await _chatService.fetchProfile(otherId);
     if (!mounted) return;
@@ -221,17 +237,5 @@ class _ConversationsPageState extends State<ConversationsPage> {
       _selectedOtherUserId = otherId;
       _selectedProfile = prof;
     });
-    await _chatService.markConversationRead(doc.id);
-  }
-
-  String _formatTimestamp(Timestamp? ts) {
-    if (ts == null) return '';
-    final d = ts.toDate();
-    final now = DateTime.now();
-    if (DateUtils.isSameDay(d, now)) {
-      return '${d.hour.toString().padLeft(2, '0')}:${d.minute.toString().padLeft(2, '0')}';
-    } else {
-      return '${d.day.toString().padLeft(2, '0')}/${d.month.toString().padLeft(2, '0')}';
-    }
   }
 }

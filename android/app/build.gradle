@@ -28,34 +28,34 @@ if (flutterVersionName == null) {
 
 android {
     namespace = "com.example.gym_app"
-    compileSdk = flutter.compileSdkVersion
+    compileSdk 34
+
     ndkVersion = flutter.ndkVersion
 
     compileOptions {
-        // Alinhado para Java 17
-        sourceCompatibility = JavaVersion.VERSION_17
-        targetCompatibility = JavaVersion.VERSION_17
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
     }
 
     defaultConfig {
-        applicationId = "com.example.gym_app"
-        minSdkVersion = flutter.minSdkVersion
-        targetSdk = flutter.targetSdkVersion
-        versionCode = flutterVersionCode.toInteger()
-        versionName = flutterVersionName
+        applicationId "com.example.gym_app"
+        minSdk 23
+        targetSdk 34
+        versionCode flutterVersionCode.toInteger()
+        versionName flutterVersionName
     }
 
     buildTypes {
         release {
-            signingConfig = signingConfigs.debug
+            signingConfig signingConfigs.debug
         }
     }
 
-    // Kotlin JVM target — garante que Kotlin gere bytecode compatível com Java 17
     kotlinOptions {
         jvmTarget = "17"
     }
 }
+
 
 // fallback / safety: força jvmTarget para todas as tasks Kotlin (resolve inconsistências)
 tasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinCompile).configureEach {

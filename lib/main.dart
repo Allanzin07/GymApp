@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'pages/mapa_page.dart';
 
 import 'firebase_options.dart';
 import 'splash_screen.dart';
@@ -40,6 +41,11 @@ class GymApp extends StatelessWidget {
         useMaterial3: true,
       ),
       home: const SplashScreen(),
+
+      // 👇 ADICIONE ISSO
+      routes: {
+        '/mapa': (context) => const MapaPage(),
+      },
     );
   }
 }

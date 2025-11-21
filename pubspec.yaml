@@ -9,8 +9,8 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
-  
-  # Ferramentas e utilidades
+
+  app_links: 6.3.2   
   cupertino_icons: ^1.0.2
   image_picker: ^1.0.7
   brasil_fields: ^1.5.1
@@ -18,6 +18,8 @@ dependencies:
   mask_text_input_formatter: ^2.4.0
   image: ^4.1.7 # Para processamento de imagem
   flutter_image_compress: ^2.3.0 # Versão unificada
+  google_maps_flutter: ^2.6.0
+  geolocator: ^13.0.2
 
   # Cache e Imagens de Rede
   cached_network_image: ^3.3.1 # Versão estável recente

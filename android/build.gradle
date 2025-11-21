@@ -5,14 +5,22 @@ buildscript {
     }
 
     dependencies {
-        // Android Gradle Plugin atualizado
+        // Android Gradle Plugin
         classpath 'com.android.tools.build:gradle:8.6.0'
-        // Kotlin atualizado
+
+        // Kotlin
         classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:2.1.0"
-        // Google Services (Firebase, etc)
+
+        // Google Services (Firebase, Maps, etc)
         classpath 'com.google.gms:google-services:4.4.2'
     }
 }
+
+ext.flutter = [
+    compileSdkVersion: 35,
+    minSdkVersion    : 23,
+    targetSdkVersion : 35
+]
 
 allprojects {
     repositories {
@@ -21,7 +29,7 @@ allprojects {
     }
 }
 
-// Diretórios de build
+// Diretório padrão de build
 rootProject.buildDir = "../build"
 
 subprojects {
@@ -32,7 +40,7 @@ subprojects {
     project.evaluationDependsOn(":app")
 }
 
-// Task de limpeza
+// Tarefa clean
 tasks.register("clean", Delete) {
     delete rootProject.buildDir
 }

@@ -10,6 +10,8 @@ import 'home_profissional_page.dart';
 import 'conversations_page.dart';
 import 'notifications_button.dart';
 import 'editar_perfil_usuario_page.dart';
+import 'pages/mapa_page.dart';
+import 'package:geolocator/geolocator.dart';
 
 class HomeUsuarioPage extends StatefulWidget {
   final bool guestMode;
@@ -34,6 +36,16 @@ class _HomeUsuarioPageState extends State<HomeUsuarioPage> {
   double _maxDistance = 10.0;
   double _minRating = 0.0;
   double? _maxPrice;
+  Position? _userPosition;
+
+  double calcularDistanciaEmKm(
+    double lat1,
+    double lon1,
+    double lat2,
+    double lon2,
+  ) {
+    return Geolocator.distanceBetween(lat1, lon1, lat2, lon2) / 1000;
+  }  
 
   void _logout() {
     Navigator.pushAndRemoveUntil(
@@ -43,11 +55,30 @@ class _HomeUsuarioPageState extends State<HomeUsuarioPage> {
     );
   }
 
+  Future<void> _getUserLocation() async {
+    bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
+    if (!serviceEnabled) return;
+
+    LocationPermission permission = await Geolocator.checkPermission();
+    if (permission == LocationPermission.denied) {
+      permission = await Geolocator.requestPermission();
+    }
+
+    if (permission == LocationPermission.deniedForever) return;
+
+    _userPosition = await Geolocator.getCurrentPosition(
+      desiredAccuracy: LocationAccuracy.high,
+    );
+  }
+
   @override
   void initState() {
     super.initState();
-    _loadAds();
+    _getUserLocation().then((_) {
+      _loadAds();
+    });
   }
+
 
   Future<void> _loadAds() async {
     setState(() {
@@ -319,6 +350,7 @@ class _HomeUsuarioPageState extends State<HomeUsuarioPage> {
                 builder: (context) => const MinhaRedeUsuario(),
               );
             }),
+
             _buildDrawerItem('Chat', Icons.chat, () async {
               Navigator.pop(context);
               if (widget.guestMode) {
@@ -347,6 +379,16 @@ class _HomeUsuarioPageState extends State<HomeUsuarioPage> {
                 ),
               );
             }),
+
+            _buildDrawerItem('Mapa', Icons.map, () {
+              Navigator.pop(context);
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => MapaPage(),
+                ),
+              );
+            }),      
           ],
         ),
       ),
