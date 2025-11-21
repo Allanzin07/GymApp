@@ -1,3 +1,5 @@
+// ignore_for_file: use_build_context_synchronously
+
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -6,6 +8,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:mask_text_input_formatter/mask_text_input_formatter.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+
 import 'custom_widgets.dart';
 import 'login_page.dart';
 
@@ -25,14 +28,17 @@ class _RegisterPageState extends State<RegisterPage> {
   final TextEditingController _nameController = TextEditingController();
   final TextEditingController _emailController = TextEditingController();
   final TextEditingController _passwordController = TextEditingController();
-  final TextEditingController _confirmPasswordController = TextEditingController();
+  final TextEditingController _confirmPasswordController =
+      TextEditingController();
   final TextEditingController _cpfCnpjController = TextEditingController();
 
   File? _profileImage;
   bool _loading = false;
 
-  final _cpfMask = MaskTextInputFormatter(mask: '###.###.###-##', filter: {"#": RegExp(r'[0-9]')});
-  final _cnpjMask = MaskTextInputFormatter(mask: '##.###.###/####-##', filter: {"#": RegExp(r'[0-9]')});
+  final _cpfMask = MaskTextInputFormatter(
+      mask: '###.###.###-##', filter: {"#": RegExp(r'[0-9]')});
+  final _cnpjMask = MaskTextInputFormatter(
+      mask: '##.###.###/####-##', filter: {"#": RegExp(r'[0-9]')});
 
   MaskTextInputFormatter getDynamicMask(String value) {
     final numbers = value.replaceAll(RegExp(r'\D'), '');
@@ -40,12 +46,12 @@ class _RegisterPageState extends State<RegisterPage> {
   }
 
   Future<void> _pickProfileImage() async {
-    final picker = ImagePicker();
-    final picked = await picker.pickImage(source: ImageSource.gallery, imageQuality: 80);
+    final picked = await ImagePicker().pickImage(
+      source: ImageSource.gallery,
+      imageQuality: 80,
+    );
     if (picked != null) {
-      setState(() {
-        _profileImage = File(picked.path);
-      });
+      setState(() => _profileImage = File(picked.path));
     }
   }
 
@@ -54,19 +60,17 @@ class _RegisterPageState extends State<RegisterPage> {
     return digits.length == 11 || digits.length == 14;
   }
 
-  // 🚀 Upload para o Supabase
+  // SUPABASE UPLOAD — PASTA FIXA
   Future<String?> _uploadProfileImage(String uid) async {
     if (_profileImage == null) return null;
 
-    final fileName = 'profile_images/$uid.jpg';
+    final path = 'users/$uid/perfil.jpg';
 
     try {
       final bytes = await _profileImage!.readAsBytes();
 
-      final response = await _supabase.storage
-          .from('uploads')
-          .uploadBinary(
-            fileName,
+      final response = await _supabase.storage.from('uploads').uploadBinary(
+            path,
             bytes,
             fileOptions: const FileOptions(
               upsert: true,
@@ -74,20 +78,16 @@ class _RegisterPageState extends State<RegisterPage> {
             ),
           );
 
-      if (response.isEmpty) {
-        debugPrint("Erro ao enviar imagem ao Supabase");
-        return null;
-      }
+      if (response.isEmpty) return null;
 
-      final publicUrl = _supabase.storage.from('uploads').getPublicUrl(fileName);
-
-      return publicUrl;
+      return _supabase.storage.from('uploads').getPublicUrl(path);
     } catch (e) {
-      debugPrint("Erro no upload Supabase: $e");
+      debugPrint("Erro upload supabase: $e");
       return null;
     }
   }
 
+  // REGISTRO
   Future<void> _onRegisterPressed() async {
     if (!_validateCpfCnpj(_cpfCnpjController.text)) {
       ScaffoldMessenger.of(context)
@@ -95,9 +95,10 @@ class _RegisterPageState extends State<RegisterPage> {
       return;
     }
 
-    if (_passwordController.text != _confirmPasswordController.text) {
-      ScaffoldMessenger.of(context)
-          .showSnackBar(const SnackBar(content: Text('Senhas não coincidem')));
+    if (_passwordController.text.trim() !=
+        _confirmPasswordController.text.trim()) {
+      ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Senhas não coincidem')));
       return;
     }
 
@@ -106,6 +107,7 @@ class _RegisterPageState extends State<RegisterPage> {
     try {
       final email = _emailController.text.trim();
 
+      // Checar e-mail já existente
       final existingQuery = await _firestore
           .collection('users')
           .where('email', isEqualTo: email)
@@ -116,30 +118,34 @@ class _RegisterPageState extends State<RegisterPage> {
         final type = existingQuery.docs.first['userType'];
         if (type != widget.userType) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Este e-mail já pertence a uma conta "$type".')),
+            SnackBar(
+                content: Text(
+                    'Este e-mail já pertence a uma conta "$type". Use outro.')),
           );
           setState(() => _loading = false);
           return;
         }
       }
 
+      // Criar usuário Firebase Auth
       final userCredential = await _auth.createUserWithEmailAndPassword(
         email: email,
         password: _passwordController.text.trim(),
       );
 
-      final user = userCredential.user!;
-      final uid = user.uid;
+      final uid = userCredential.user!.uid;
 
-      final imageUrl = await _uploadProfileImage(uid);
+      // UPLOAD SUPABASE
+      final fotoUrl = await _uploadProfileImage(uid);
 
+      // SALVAR EM USERS (sempre)
       await _firestore.collection('users').doc(uid).set({
         'uid': uid,
         'name': _nameController.text.trim(),
         'email': email,
         'cpfCnpj': _cpfCnpjController.text.trim(),
         'userType': widget.userType,
-        'fotoPerfilUrl': imageUrl ?? '',
+        'fotoPerfilUrl': fotoUrl ?? '',
         'descricao': '',
         'localizacao': '',
         'whatsapp': '',
@@ -147,11 +153,12 @@ class _RegisterPageState extends State<RegisterPage> {
         'createdAt': FieldValue.serverTimestamp(),
       });
 
+      // SALVAR EM COLEÇÃO ESPECÍFICA
       if (widget.userType == 'Academia') {
         await _firestore.collection('academias').doc(uid).set({
           'nome': _nameController.text.trim(),
           'email': email,
-          'fotoPerfilUrl': imageUrl ?? '',
+          'fotoPerfilUrl': fotoUrl ?? '',
           'capaUrl': '',
           'descricao': '',
           'localizacao': '',
@@ -163,8 +170,7 @@ class _RegisterPageState extends State<RegisterPage> {
         await _firestore.collection('professionals').doc(uid).set({
           'nome': _nameController.text.trim(),
           'email': email,
-          'fotoUrl': imageUrl ?? '',
-          'capaUrl': '',
+          'fotoUrl': fotoUrl ?? '',
           'especialidade': '',
           'descricao': '',
           'localizacao': '',
@@ -174,7 +180,7 @@ class _RegisterPageState extends State<RegisterPage> {
         });
       }
 
-      await user.sendEmailVerification();
+      await _auth.currentUser!.sendEmailVerification();
 
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Conta criada! Verifique seu e-mail.')),
@@ -184,16 +190,19 @@ class _RegisterPageState extends State<RegisterPage> {
 
       Navigator.pushReplacement(
         context,
-        MaterialPageRoute(builder: (_) => LoginPage(userType: widget.userType)),
+        MaterialPageRoute(
+            builder: (_) => LoginPage(userType: widget.userType)),
       );
-    } on FirebaseAuthException catch (e) {
+    } catch (e) {
+      debugPrint("Erro register: $e");
       ScaffoldMessenger.of(context)
-          .showSnackBar(SnackBar(content: Text(e.message ?? 'Erro ao registrar')));
+          .showSnackBar(SnackBar(content: Text(e.toString())));
     } finally {
       setState(() => _loading = false);
     }
   }
 
+  // UI
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -203,13 +212,18 @@ class _RegisterPageState extends State<RegisterPage> {
       ),
       body: Container(
         decoration: const BoxDecoration(
-          gradient: LinearGradient(colors: [Colors.red, Colors.white], begin: Alignment.topCenter, end: Alignment.bottomCenter),
+          gradient: LinearGradient(
+            colors: [Colors.red, Colors.white],
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+          ),
         ),
         child: SingleChildScrollView(
           padding: const EdgeInsets.all(24),
           child: Column(
             children: [
               const SizedBox(height: 24),
+
               GestureDetector(
                 onTap: _pickProfileImage,
                 child: CircleAvatar(
@@ -218,10 +232,12 @@ class _RegisterPageState extends State<RegisterPage> {
                   backgroundImage:
                       _profileImage != null ? FileImage(_profileImage!) : null,
                   child: _profileImage == null
-                      ? Icon(Icons.camera_alt, size: 40, color: Colors.red.shade700)
+                      ? Icon(Icons.camera_alt,
+                          size: 40, color: Colors.red.shade700)
                       : null,
                 ),
               ),
+
               const SizedBox(height: 24),
 
               CustomRadiusTextfield(
@@ -269,7 +285,8 @@ class _RegisterPageState extends State<RegisterPage> {
                   hintText: 'CPF ou CNPJ',
                   filled: true,
                   fillColor: Colors.white,
-                  border: OutlineInputBorder(borderRadius: BorderRadius.circular(8)),
+                  border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(8)),
                 ),
               ),
 

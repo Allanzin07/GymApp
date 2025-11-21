@@ -1,6 +1,7 @@
 // lib/chat_page.dart
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'chat_service.dart';
 
@@ -87,7 +88,7 @@ class _ChatPanelState extends State<ChatPanel> {
   final ScrollController _scroll = ScrollController();
 
   String? _conversationId;
-  bool _isCreating = false;
+  bool _isCreating = true; // Inicia como true pois vamos preparar a conversa
 
   String? get _me => _auth.currentUser?.uid;
 
@@ -97,24 +98,86 @@ class _ChatPanelState extends State<ChatPanel> {
     _prepareConversation();
   }
 
+  @override
+  void dispose() {
+    _controller.dispose();
+    _scroll.dispose();
+    super.dispose();
+  }
+
   Future<void> _prepareConversation() async {
-    if (_me == null) return;
-    setState(() => _isCreating = true);
-    final id = await _chatService.getOrCreateConversation(widget.participantId);
-    if (mounted) {
-      setState(() {
-        _conversationId = id;
-        _isCreating = false;
-      });
-      if (id != null) {
-        await _chatService.markConversationRead(id);
+    if (_me == null) {
+      if (mounted) {
+        setState(() => _isCreating = false);
+      }
+      return;
+    }
+
+    if (widget.participantId.isEmpty) {
+      if (mounted) {
+        setState(() => _isCreating = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('ID do participante inválido')),
+        );
+      }
+      return;
+    }
+
+    try {
+      setState(() => _isCreating = true);
+      final id = await _chatService.getOrCreateConversation(widget.participantId);
+      
+      if (mounted) {
+        setState(() {
+          _conversationId = id;
+          _isCreating = false;
+        });
+        
+        if (id != null) {
+          try {
+            await _chatService.markConversationRead(id);
+          } catch (e) {
+            debugPrint('Erro ao marcar conversa como lida: $e');
+          }
+        } else {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Erro ao criar conversa. Tente novamente.')),
+          );
+        }
+      }
+    } catch (e) {
+      debugPrint('Erro ao preparar conversa: $e');
+      if (mounted) {
+        setState(() => _isCreating = false);
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Erro ao carregar conversa: $e')),
+        );
       }
     }
   }
 
   Future<void> _send() async {
     final text = _controller.text.trim();
-    if (text.isEmpty || _conversationId == null || _me == null) return;
+    if (text.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Digite uma mensagem')),
+      );
+      return;
+    }
+
+    if (_conversationId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Aguarde a conversa ser criada')),
+      );
+      return;
+    }
+
+    if (_me == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Você precisa estar logado')),
+      );
+      return;
+    }
 
     final message = {
       'senderId': _me,
@@ -128,9 +191,13 @@ class _ChatPanelState extends State<ChatPanel> {
       _controller.clear();
       _scrollToBottom();
     } catch (e) {
+      debugPrint('Erro ao enviar mensagem: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Erro ao enviar: $e')),
+          SnackBar(
+            content: Text('Erro ao enviar: ${e.toString()}'),
+            backgroundColor: Colors.red,
+          ),
         );
       }
     }
@@ -214,13 +281,45 @@ class _ChatPanelState extends State<ChatPanel> {
               if (snapshot.connectionState == ConnectionState.waiting) {
                 return const Center(child: CircularProgressIndicator());
               }
-              final docs = snapshot.data?.docs ?? [];
-              if (_conversationId != null) {
-                _chatService.markConversationRead(_conversationId!);
+              if (snapshot.hasError) {
+                return Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Icon(Icons.error_outline, size: 48, color: Colors.red),
+                      const SizedBox(height: 16),
+                      Text(
+                        'Erro ao carregar mensagens: ${snapshot.error}',
+                        style: Theme.of(context).textTheme.bodyMedium,
+                        textAlign: TextAlign.center,
+                      ),
+                      const SizedBox(height: 16),
+                      ElevatedButton(
+                        onPressed: () {
+                          setState(() {});
+                        },
+                        child: const Text('Tentar novamente'),
+                      ),
+                    ],
+                  ),
+                );
               }
+
+              final docs = snapshot.data?.docs ?? [];
+              
+              // Marca como lida de forma assíncrona para não bloquear a UI
+              if (_conversationId != null && docs.isNotEmpty) {
+                _chatService.markConversationRead(_conversationId!).catchError((e) {
+                  debugPrint('Erro ao marcar como lida: $e');
+                });
+              }
+              
               if (docs.isEmpty) {
                 return Center(
-                  child: Text('Nenhuma mensagem ainda. Comece a conversa!', style: Theme.of(context).textTheme.bodyMedium),
+                  child: Text(
+                    'Nenhuma mensagem ainda. Comece a conversa!',
+                    style: Theme.of(context).textTheme.bodyMedium,
+                  ),
                 );
               }
 

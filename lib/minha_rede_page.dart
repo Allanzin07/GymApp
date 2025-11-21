@@ -55,25 +55,29 @@ class _MinhaRedePageState extends State<MinhaRedePage> {
 
     try {
       String? tipo;
-      final userDoc =
-          await _firestore.collection('users').doc(currentUser.uid).get();
-      if (userDoc.exists) {
-        tipo = userDoc.data()?['tipo'] as String?;
+      
+      // 1) Verifica se existe em professionals
+      final profDoc =
+          await _firestore.collection('professionals').doc(currentUser.uid).get();
+      if (profDoc.exists) {
+        tipo = 'profissional';
       }
-
-      if (tipo == null) {
-        final profDoc =
-            await _firestore.collection('professionals').doc(currentUser.uid).get();
-        if (profDoc.exists) {
-          tipo = 'profissional';
-        }
-      }
-
+      
+      // 2) Se não encontrou, verifica academias
       if (tipo == null) {
         final acadDoc =
             await _firestore.collection('academias').doc(currentUser.uid).get();
         if (acadDoc.exists) {
           tipo = 'academia';
+        }
+      }
+      
+      // 3) Se não encontrou, verifica users (por último, pois pode existir em múltiplas coleções)
+      if (tipo == null) {
+        final userDoc =
+            await _firestore.collection('users').doc(currentUser.uid).get();
+        if (userDoc.exists) {
+          tipo = userDoc.data()?['tipo'] as String? ?? 'usuario';
         }
       }
 
@@ -113,9 +117,53 @@ class _MinhaRedePageState extends State<MinhaRedePage> {
             .where('profissionalId', isEqualTo: _userId)
             .snapshots();
       case 'academia':
+        // Busca conexões onde esta academia é participante
         return connections.where('academiaId', isEqualTo: _userId).snapshots();
       default:
         return null;
+    }
+  }
+  
+  /// Busca alternativa: tenta encontrar conexões mesmo se o campo não corresponder exatamente
+  /// Útil para debug e casos onde o documento pode ter sido criado com ID diferente
+  Future<List<QueryDocumentSnapshot<Map<String, dynamic>>>> _buscarConexoesAlternativa() async {
+    if (_userId == null || _userType == null) return [];
+    
+    try {
+      // Busca todas as conexões e filtra no cliente
+      final allConnections = await _firestore.collection('connections').get();
+      final filtered = allConnections.docs.where((doc) {
+        final data = doc.data();
+        switch (_userType) {
+          case 'usuario':
+            return data['usuarioId'] == _userId;
+          case 'profissional':
+            return data['profissionalId'] == _userId;
+          case 'academia':
+            return data['academiaId'] == _userId;
+          default:
+            return false;
+        }
+      }).toList();
+      
+      // Debug: se não encontrou nada, vamos verificar se há conexões com IDs diferentes
+      if (filtered.isEmpty && _userType == 'academia') {
+        // Para debug: mostra todas as conexões que têm academiaId (mesmo que diferente)
+        final withAcademia = allConnections.docs.where((doc) {
+          final data = doc.data();
+          return data.containsKey('academiaId') && data['academiaId'] != null;
+        }).toList();
+        
+        // Se encontrou conexões com academiaId diferente, retorna elas para debug
+        // (isso vai mostrar que há uma inconsistência)
+        if (withAcademia.isNotEmpty) {
+          return withAcademia;
+        }
+      }
+      
+      return filtered;
+    } catch (e) {
+      return [];
     }
   }
 
@@ -222,21 +270,158 @@ class _MinhaRedePageState extends State<MinhaRedePage> {
 
         final docs = snapshot.data?.docs ?? [];
         if (docs.isEmpty) {
-          return _buildMessage('Nenhuma conexão encontrada.');
+          // Tenta busca alternativa para verificar se há conexões com IDs diferentes
+          return FutureBuilder<List<QueryDocumentSnapshot<Map<String, dynamic>>>>(
+            future: _buscarConexoesAlternativa(),
+            builder: (context, altSnapshot) {
+              if (altSnapshot.connectionState == ConnectionState.waiting) {
+                return const Center(
+                  child: CircularProgressIndicator(color: Colors.red),
+                );
+              }
+              
+              final altDocs = altSnapshot.data ?? [];
+              if (altDocs.isNotEmpty) {
+                // Encontrou conexões na busca alternativa - mostra elas
+                return FutureBuilder<List<_ConnectionRowData?>>(
+                  future: Future.wait(
+                    altDocs.map((doc) async {
+                      try {
+                        final data = doc.data();
+                        final partnerId = _resolverParceiroId(data);
+                        if (partnerId == null) {
+                          return _ConnectionRowData(
+                            partner: {
+                              'nome': 'Parceiro não encontrado',
+                              'telefone': 'N/A',
+                            },
+                            connectionDoc: doc,
+                          );
+                        }
+                        final partner = await _buscarParceiro(partnerId);
+                        if (partner == null) {
+                          return _ConnectionRowData(
+                            partner: {
+                              'nome': 'Parceiro não encontrado (ID: ${partnerId.substring(0, 8)}...)',
+                              'telefone': 'N/A',
+                            },
+                            connectionDoc: doc,
+                          );
+                        }
+                        return _ConnectionRowData(
+                          partner: partner,
+                          connectionDoc: doc,
+                        );
+                      } catch (e) {
+                        return _ConnectionRowData(
+                          partner: {
+                            'nome': 'Erro ao carregar',
+                            'telefone': 'N/A',
+                          },
+                          connectionDoc: doc,
+                        );
+                      }
+                    }),
+                  ),
+                  builder: (context, snapshot) {
+                    if (snapshot.connectionState == ConnectionState.waiting) {
+                      return const Center(
+                        child: CircularProgressIndicator(color: Colors.red),
+                      );
+                    }
+                    final rows = snapshot.data?.whereType<_ConnectionRowData>().toList(growable: false) ?? [];
+                    if (rows.isEmpty) {
+                      return _buildMessage(
+                        'Nenhuma conexão encontrada.\n'
+                        'Tipo: $_userType | UserId: $_userId\n'
+                        'Verifique se você fez uma solicitação de conexão.',
+                      );
+                    }
+                    return _buildConnectionsTable(rows);
+                  },
+                );
+              }
+              
+              // Não encontrou nada mesmo na busca alternativa
+              // Busca uma amostra de conexões para mostrar informações de debug
+              return FutureBuilder<QuerySnapshot>(
+                future: _firestore.collection('connections').limit(5).get(),
+                builder: (context, sampleSnapshot) {
+                  String debugInfo = 'Nenhuma conexão encontrada.\n\n';
+                  debugInfo += 'Tipo: $_userType\n';
+                  debugInfo += 'UserId logado: $_userId\n\n';
+                  
+                  if (sampleSnapshot.hasData && sampleSnapshot.data!.docs.isNotEmpty) {
+                    final fieldName = _userType == 'academia' ? 'academiaId' : _userType == 'profissional' ? 'profissionalId' : 'usuarioId';
+                    final sample = sampleSnapshot.data!.docs.first.data() as Map<String, dynamic>;
+                    final sampleId = sample[fieldName] as String?;
+                    
+                    if (sampleId != null) {
+                      debugInfo += 'Exemplo de ${fieldName} encontrado: $sampleId\n';
+                      if (sampleId != _userId) {
+                        debugInfo += '\n⚠️ ATENÇÃO: O ID no documento ($sampleId) é diferente do seu userId logado.\n';
+                        debugInfo += 'Isso significa que a conexão foi criada com um ID diferente.\n\n';
+                        debugInfo += 'Solução:\n';
+                        debugInfo += '1. No Firestore, edite o documento e altere o campo "$fieldName" para: $_userId\n';
+                        debugInfo += '2. Ou peça ao usuário para criar uma nova solicitação de conexão.';
+                      } else {
+                        debugInfo += '\n✅ O ID corresponde ao seu userId.';
+                      }
+                    } else {
+                      debugInfo += 'Nenhum documento com o campo "$fieldName" foi encontrado.';
+                    }
+                  } else {
+                    debugInfo += 'Nenhuma conexão encontrada no Firestore.';
+                  }
+                  
+                  return _buildMessage(debugInfo);
+                },
+              );
+            },
+          );
         }
 
         return FutureBuilder<List<_ConnectionRowData?>>(
           future: Future.wait(
             docs.map((doc) async {
-              final data = doc.data();
-              final partnerId = _resolverParceiroId(data);
-              if (partnerId == null) return null;
-              final partner = await _buscarParceiro(partnerId);
-              if (partner == null) return null;
-              return _ConnectionRowData(
-                partner: partner,
-                connectionDoc: doc,
-              );
+              try {
+                final data = doc.data();
+                final partnerId = _resolverParceiroId(data);
+                if (partnerId == null) {
+                  // Se não conseguir resolver o parceiro, ainda mostra a conexão com dados básicos
+                  return _ConnectionRowData(
+                    partner: {
+                      'nome': 'Parceiro não encontrado',
+                      'telefone': 'N/A',
+                    },
+                    connectionDoc: doc,
+                  );
+                }
+                final partner = await _buscarParceiro(partnerId);
+                if (partner == null) {
+                  // Se o parceiro não for encontrado, mostra com dados básicos
+                  return _ConnectionRowData(
+                    partner: {
+                      'nome': 'Parceiro não encontrado (ID: ${partnerId.substring(0, 8)}...)',
+                      'telefone': 'N/A',
+                    },
+                    connectionDoc: doc,
+                  );
+                }
+                return _ConnectionRowData(
+                  partner: partner,
+                  connectionDoc: doc,
+                );
+              } catch (e) {
+                // Em caso de erro, ainda tenta mostrar a conexão
+                return _ConnectionRowData(
+                  partner: {
+                    'nome': 'Erro ao carregar',
+                    'telefone': 'N/A',
+                  },
+                  connectionDoc: doc,
+                );
+              }
             }),
           ),
           builder: (context, snapshot) {
@@ -253,7 +438,8 @@ class _MinhaRedePageState extends State<MinhaRedePage> {
 
             if (rows.isEmpty) {
               return _buildMessage(
-                'Nenhum aluno/cliente válido encontrado para exibir.',
+                'Nenhum aluno/cliente válido encontrado para exibir.\n'
+                'Total de documentos encontrados: ${docs.length}',
               );
             }
 
@@ -285,164 +471,294 @@ class _MinhaRedePageState extends State<MinhaRedePage> {
   Widget _buildConnectionsTable(List<_ConnectionRowData> rows) {
     final isManager = _userType == 'profissional' || _userType == 'academia';
 
-    final filteredRows = rows.where((row) {
-      final connection = row.connection;
-      if (_userType == 'profissional') {
-        final flag = connection['isActiveForProfissional'];
-        return flag == true;
-      }
-      if (_userType == 'academia') {
-        final flag = connection['isActiveForAcademia'];
-        return flag == true;
-      }
-      // usuario
-      final flag = connection['isActiveForUsuario'];
-      return flag == true;
-    }).toList();
+    final conexoesAtivas = <_ConnectionRowData>[];
+    final solicitacoesPendentes = <_ConnectionRowData>[];
 
-    if (filteredRows.isEmpty) {
+    for (final row in rows) {
+      final connection = row.connection;
+      final status = (connection['status'] as String?) ?? 'pending';
+
+      bool isActive = false;
+      if (status == 'active') {
+        if (_userType == 'profissional') {
+          isActive = connection['isActiveForProfissional'] != false;
+        } else if (_userType == 'academia') {
+          isActive = connection['isActiveForAcademia'] != false;
+        } else {
+          isActive = connection['isActiveForUsuario'] != false;
+        }
+      }
+
+      if (isActive) {
+        conexoesAtivas.add(row);
+      } else if (status != 'rejected') {
+        solicitacoesPendentes.add(row);
+      }
+    }
+
+    if (conexoesAtivas.isEmpty && solicitacoesPendentes.isEmpty) {
       return isManager
-          ? _buildMessage('Nenhuma conexão ativa ainda.')
+          ? _buildMessage('Nenhuma conexão ou solicitação encontrada.')
           : _buildMessage('Nenhuma conexão.\nFaça uma solicitação em um perfil para aparecer aqui.');
     }
 
-    return SingleChildScrollView(
+    return ListView(
       padding: const EdgeInsets.all(16),
-      child: Card(
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-        elevation: 3,
-        child: Padding(
-          padding: const EdgeInsets.all(16),
-          child: Column(
+      children: [
+        if (solicitacoesPendentes.isNotEmpty && isManager)
+          Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Text(
-                'Gerenciamento de alunos/clientes',
+              Text(
+                'Solicitações Pendentes',
                 style: TextStyle(
                   fontSize: 20,
                   fontWeight: FontWeight.bold,
-                  color: Colors.black87,
+                  color: Colors.orange.shade900,
                 ),
               ),
-              const SizedBox(height: 8),
-              Text(
-                _userType == 'profissional'
-                    ? 'Abaixo estão os alunos vinculados ao seu perfil profissional.'
-                    : 'Abaixo estão os clientes vinculados à sua academia.',
-                style: const TextStyle(
-                  fontSize: 14,
-                  color: Colors.black54,
-                ),
-              ),
-              const SizedBox(height: 16),
-              SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                child: DataTable(
-                  headingRowColor: MaterialStateColor.resolveWith(
-                    (states) => Colors.red.shade50,
-                  ),
-                  columns: [
-                    const DataColumn(label: Text('Nome')),
-                    const DataColumn(label: Text('Contato')),
-                    const DataColumn(label: Text('Status')),
-                    const DataColumn(label: Text('Vínculo')),
-                    if (isManager) const DataColumn(label: Text('Ações')),
-                  ],
-                  rows: filteredRows.map((row) => _buildDataRow(row, isManager)).toList(),
-                ),
-              ),
+              const SizedBox(height: 12),
+              ...solicitacoesPendentes.map((row) {
+                return _buildConnectionCard(row, isManager, isRequest: true);
+              }),
             ],
           ),
+        if (solicitacoesPendentes.isNotEmpty && isManager)
+          const SizedBox(height: 32),
+        const Text(
+          'Conexões Ativas',
+          style: TextStyle(
+            fontSize: 20,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        const SizedBox(height: 12),
+        ...conexoesAtivas.map((row) {
+          return _buildConnectionCard(row, isManager, isRequest: false);
+        }),
+      ],
+    );
+  }
+
+  /// CARD moderno estilo rede social
+  Widget _buildConnectionCard(
+    _ConnectionRowData data,
+    bool isManager, {
+    bool isRequest = false,
+  }) {
+    final partner = data.partner;
+    final connection = data.connection;
+
+    final nome = partner['nome'] as String? ??
+        partner['name'] as String? ??
+        'Nome não informado';
+    final foto = partner['fotoPerfilUrl'] as String? ??
+        partner['fotoUrl'] as String? ??
+        partner['avatar'] as String? ??
+        '';
+    final telefone = partner['whatsapp'] as String? ??
+        partner['telefone'] as String? ??
+        partner['phone'] as String? ??
+        'Não informado';
+    final dataVinculo = _formatDate(_extractConnectionDate(connection)) ??
+        'Data não informada';
+    final status = (connection['status'] as String?) ?? 'pending';
+
+    Color statusColor = Colors.orange;
+    String statusLabel = 'Pendente';
+    if (status == 'active') {
+      statusColor = Colors.green;
+      statusLabel = 'Conectado';
+    }
+
+    return Card(
+      margin: const EdgeInsets.only(bottom: 16),
+      elevation: 4,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(18)),
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Row(
+          children: [
+            // FOTO DO PERFIL
+            CircleAvatar(
+              radius: 32,
+              backgroundImage: foto.isNotEmpty
+                  ? NetworkImage(foto)
+                  : null,
+              backgroundColor: Colors.grey.shade300,
+              child: foto.isEmpty
+                  ? const Icon(Icons.person, size: 32, color: Colors.grey)
+                  : null,
+              onBackgroundImageError: (_, __) {},
+            ),
+            const SizedBox(width: 16),
+            // TEXTO PRINCIPAL
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    nome,
+                    style: const TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    telefone,
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: Colors.grey.shade700,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  // STATUS
+                  Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 10,
+                          vertical: 4,
+                        ),
+                        decoration: BoxDecoration(
+                          color: statusColor,
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                        child: Text(
+                          statusLabel,
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 12,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Icon(Icons.calendar_month,
+                          size: 16, color: Colors.grey.shade600),
+                      const SizedBox(width: 4),
+                      Text(
+                        dataVinculo,
+                        style: TextStyle(
+                          color: Colors.grey.shade700,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            // AÇÕES (Somente para academia/profissional)
+            if (isManager && isRequest)
+              Column(
+                children: [
+                  ElevatedButton.icon(
+                    onPressed: () => _aceitarSolicitacao(data),
+                    icon: const Icon(Icons.check, size: 18),
+                    label: const Text('Aceitar'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.green,
+                      foregroundColor: Colors.white,
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 8),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  OutlinedButton.icon(
+                    onPressed: () => _rejeitarSolicitacao(data),
+                    icon: const Icon(Icons.close, size: 18, color: Colors.red),
+                    label: const Text(
+                      'Recusar',
+                      style: TextStyle(color: Colors.red),
+                    ),
+                    style: OutlinedButton.styleFrom(
+                      side: const BorderSide(color: Colors.red),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 12, vertical: 8),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+          ],
         ),
       ),
     );
   }
 
-  DataRow _buildDataRow(_ConnectionRowData data, bool isManager) {
-    final partner = data.partner;
-    final connection = data.connection;
-
-    final nome = partner['nome'] as String? ?? 'Nome não informado';
-    final telefone = partner['telefone'] as String? ??
-        partner['whatsapp'] as String? ??
-        partner['phone'] as String? ??
-        'Não informado';
-    final vinculo = _formatDate(_extractConnectionDate(connection)) ??
-        'Data indisponível';
-    final status = (connection['status'] as String?) ?? 'pending';
-    final statusLabel =
-        status == 'active' ? 'Conectado' : status == 'pending' ? 'Pendente' : status;
-    final statusColor = status == 'active'
-        ? Colors.green
-        : status == 'pending'
-            ? Colors.orange
-            : Colors.grey;
-
-    final cells = <DataCell>[
-      DataCell(Text(nome)),
-      DataCell(Text(telefone)),
-      DataCell(
-        Chip(
-          avatar: Icon(
-            status == 'active' ? Icons.check_circle : Icons.hourglass_top,
-            color: Colors.white,
-            size: 16,
-          ),
-          label: Text(
-            statusLabel,
-            style: const TextStyle(color: Colors.white),
-          ),
-          backgroundColor: statusColor,
-        ),
-      ),
-      DataCell(Text(vinculo)),
-    ];
-
-    if (isManager) {
-      Widget actionWidget;
-      if (status == 'pending') {
-        actionWidget = ElevatedButton(
-          onPressed: () => _aceitarSolicitacao(data),
-          style: ElevatedButton.styleFrom(
-            backgroundColor: Colors.red,
-            foregroundColor: Colors.white,
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
-            ),
-          ),
-          child: const Text('Aceitar'),
-        );
-      } else {
-        actionWidget = const Text(
-          'Ativo',
-          style: TextStyle(color: Colors.green),
-        );
-      }
-      cells.add(DataCell(actionWidget));
-    }
-
-    return DataRow(cells: cells);
-  }
-
   Future<void> _aceitarSolicitacao(_ConnectionRowData data) async {
     try {
-      await data.connectionDoc.reference.update({
+      final updateData = <String, dynamic>{
         'status': 'active',
         'aceitoEm': FieldValue.serverTimestamp(),
-        'isActiveForProfissional': _userType == 'profissional' ? true : FieldValue.delete(),
-        'isActiveForAcademia': _userType == 'academia' ? true : FieldValue.delete(),
-        'isActiveForUsuario': true,
-      });
+        'isActiveForUsuario': true, // Sempre true quando aceito
+      };
+      
+      // Define o flag apropriado baseado no tipo de usuário
+      if (_userType == 'profissional') {
+        updateData['isActiveForProfissional'] = true;
+      } else if (_userType == 'academia') {
+        updateData['isActiveForAcademia'] = true;
+      }
+      
+      await data.connectionDoc.reference.update(updateData);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Solicitação aceita com sucesso.')),
+          const SnackBar(
+            content: Text('Solicitação aceita com sucesso.'),
+            backgroundColor: Colors.green,
+          ),
         );
       }
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Erro ao aceitar solicitação: $e')),
+          SnackBar(
+            content: Text('Erro ao aceitar solicitação: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
+  }
+
+  /// Rejeita uma solicitação de conexão.
+  Future<void> _rejeitarSolicitacao(_ConnectionRowData data) async {
+    try {
+      final updateData = <String, dynamic>{
+        'status': 'rejected',
+        'rejeitadoEm': FieldValue.serverTimestamp(),
+      };
+      
+      // Define o flag apropriado como false baseado no tipo de usuário
+      if (_userType == 'profissional') {
+        updateData['isActiveForProfissional'] = false;
+      } else if (_userType == 'academia') {
+        updateData['isActiveForAcademia'] = false;
+      }
+      
+      await data.connectionDoc.reference.update(updateData);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Solicitação rejeitada.'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Erro ao rejeitar solicitação: $e'),
+            backgroundColor: Colors.red,
+          ),
         );
       }
     }

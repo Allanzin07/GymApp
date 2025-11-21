@@ -4,11 +4,12 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'login_page.dart';
 import 'ads_carousel.dart';
 import 'favorites_page.dart';
-import 'minha_rede_page.dart';
+import 'minha_rede_usuario.dart';
 import 'home_academia_page.dart';
 import 'home_profissional_page.dart';
 import 'conversations_page.dart';
 import 'notifications_button.dart';
+import 'editar_perfil_usuario_page.dart';
 
 class HomeUsuarioPage extends StatefulWidget {
   final bool guestMode;
@@ -252,9 +253,39 @@ class _HomeUsuarioPageState extends State<HomeUsuarioPage> {
           children: [
             DrawerHeader(
               decoration: BoxDecoration(color: Colors.red.shade700),
-              child: const Center(
-                child: Text('Menu',
-                    style: TextStyle(color: Colors.white, fontSize: 24)),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  const Text(
+                    'Menu',
+                    style: TextStyle(color: Colors.white, fontSize: 24),
+                  ),
+                  const SizedBox(height: 16),
+                  ElevatedButton.icon(
+                    onPressed: () {
+                      Navigator.pop(context);
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => const EditarPerfilUsuarioPage(),
+                        ),
+                      );
+                    },
+                    icon: const Icon(Icons.edit, size: 18),
+                    label: const Text('Editar Perfil'),
+                    style: ElevatedButton.styleFrom(
+                      backgroundColor: Colors.white,
+                      foregroundColor: Colors.red.shade700,
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 8,
+                      ),
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(20),
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
             _buildDrawerItem('Home', Icons.home, () => Navigator.pop(context)),
@@ -282,9 +313,10 @@ class _HomeUsuarioPageState extends State<HomeUsuarioPage> {
                 );
                 return;
               }
-              Navigator.push(
-                context,
-                MaterialPageRoute(builder: (_) => const MinhaRedePage()),
+              // Abre a modal específica para usuários
+              showDialog(
+                context: context,
+                builder: (context) => const MinhaRedeUsuario(),
               );
             }),
             _buildDrawerItem('Chat', Icons.chat, () async {

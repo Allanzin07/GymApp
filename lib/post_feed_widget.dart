@@ -1,13 +1,15 @@
 import 'dart:io';
 import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:firebase_storage/firebase_storage.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:uuid/uuid.dart';
 import 'package:cached_network_image/cached_network_image.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:flutter_image_compress/flutter_image_compress.dart';
 
 class PostFeedWidget extends StatefulWidget {
   final String userId;
@@ -30,8 +32,8 @@ class PostFeedWidget extends StatefulWidget {
 class _PostFeedWidgetState extends State<PostFeedWidget> {
   final _firestore = FirebaseFirestore.instance;
   final _auth = FirebaseAuth.instance;
-  final _storage = FirebaseStorage.instance;
   final _picker = ImagePicker();
+  final _supabase = Supabase.instance.client;
   final TextEditingController _textController = TextEditingController();
 
   File? _selectedImage;
@@ -39,10 +41,15 @@ class _PostFeedWidgetState extends State<PostFeedWidget> {
   Uint8List? _selectedImageBytes;
   File? _selectedVideo;
   XFile? _selectedVideoXFile;
+
   bool _isUploading = false;
-  double _uploadProgress = 0.0;
+  double _uploadProgress = 0.0; // agora só usado pra exibir "indeterminado"
 
   bool get _canManage => _auth.currentUser?.uid == widget.userId;
+
+  // =========================================================
+  // SELEÇÃO DE MÍDIA
+  // =========================================================
 
   Future<XFile?> _selectImageFile() async {
     final source = await showModalBottomSheet<ImageSource>(
@@ -130,51 +137,75 @@ class _PostFeedWidgetState extends State<PostFeedWidget> {
     });
   }
 
-  Future<String> _uploadMedia({
-    required String folder,
-    required String extension,
-    XFile? xFile,
-    File? file,
-    void Function(double progress)? onProgress,
-  }) async {
-    final id = const Uuid().v4();
-    final ref = _storage.ref().child('$folder/$id.$extension');
-    final metadata = SettableMetadata(
-      contentType: extension == 'mp4' ? 'video/mp4' : 'image/jpeg',
-    );
+  // =========================================================
+  // UPLOAD PARA SUPABASE (IMAGEM + VÍDEO)
+  // =========================================================
 
-    UploadTask uploadTask;
-    if (kIsWeb) {
-      if (xFile == null) {
-        throw Exception('Nenhum arquivo selecionado.');
+  Future<Uint8List> _compressImageBytes(Uint8List data) async {
+    try {
+      final result = await FlutterImageCompress.compressWithList(
+        data,
+        minWidth: 1280,
+        minHeight: 720,
+        quality: 75,
+        format: CompressFormat.jpeg,
+      );
+      if (result.isNotEmpty) {
+        return Uint8List.fromList(result);
       }
-      final bytes = await xFile.readAsBytes();
-      uploadTask = ref.putData(bytes, metadata);
-    } else {
-      final fileToUpload = file ?? (xFile != null ? File(xFile.path) : null);
-      if (fileToUpload == null) {
-        throw Exception('Nenhum arquivo selecionado.');
-      }
-      uploadTask = ref.putFile(fileToUpload, metadata);
+    } catch (_) {}
+    return data;
+  }
+
+  Future<Map<String, String>> _uploadImageToSupabase(Uint8List bytes) async {
+    final compressed = await _compressImageBytes(bytes);
+    final id = const Uuid().v4();
+    final path = 'gymapp/posts/${widget.userId}/$id.jpg';
+
+    final response = await _supabase.storage.from('uploads').uploadBinary(
+          path,
+          compressed,
+          fileOptions: const FileOptions(
+            contentType: 'image/jpeg',
+          ),
+        );
+
+    if (response.isEmpty) {
+      throw Exception('Falha ao enviar imagem');
     }
 
-    uploadTask.snapshotEvents.listen((TaskSnapshot snapshot) {
-      final totalBytes = snapshot.totalBytes == 0 ? 1 : snapshot.totalBytes;
-      final progress = snapshot.bytesTransferred / totalBytes;
-      if (onProgress != null) {
-        onProgress(progress);
-      } else if (mounted) {
-        setState(() => _uploadProgress = progress);
-      }
-    });
-
-    final snapshot = await uploadTask.whenComplete(() {});
-    return await snapshot.ref.getDownloadURL();
+    final url = _supabase.storage.from('uploads').getPublicUrl(path);
+    return {'url': url, 'path': path};
   }
+
+  Future<Map<String, String>> _uploadVideoToSupabase(XFile xfile) async {
+    final bytes = await xfile.readAsBytes();
+    final id = const Uuid().v4();
+    final path = 'gymapp/posts/${widget.userId}/$id.mp4';
+
+    final response = await _supabase.storage.from('uploads').uploadBinary(
+          path,
+          bytes,
+          fileOptions: const FileOptions(
+            contentType: 'video/mp4',
+          ),
+        );
+
+    if (response.isEmpty) {
+      throw Exception('Falha ao enviar vídeo');
+    }
+
+    final url = _supabase.storage.from('uploads').getPublicUrl(path);
+    return {'url': url, 'path': path};
+  }
+
+  // =========================================================
+  // CRIAR POST
+  // =========================================================
 
   Future<void> _createPost() async {
     final text = _textController.text.trim();
-    
+
     if (text.isEmpty && _selectedImage == null && _selectedVideo == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Adicione texto, foto ou vídeo para publicar')),
@@ -190,32 +221,27 @@ class _PostFeedWidgetState extends State<PostFeedWidget> {
     try {
       String? mediaUrl;
       String? mediaType;
+      String? mediaPath;
 
-      if (_selectedImageXFile != null || _selectedImage != null) {
-        mediaUrl = await _uploadMedia(
-          folder: 'posts/${widget.userId}',
-          extension: 'jpg',
-          xFile: _selectedImageXFile,
-          file: _selectedImage,
-          onProgress: (value) {
-            if (mounted) {
-              setState(() => _uploadProgress = value);
-            }
-          },
-        );
+      if (_selectedImageXFile != null || _selectedImageBytes != null) {
+        Uint8List bytes;
+
+        if (_selectedImageBytes != null) {
+          bytes = _selectedImageBytes!;
+        } else if (_selectedImage != null) {
+          bytes = await _selectedImage!.readAsBytes();
+        } else {
+          throw Exception('Erro ao ler imagem selecionada.');
+        }
+
+        final uploaded = await _uploadImageToSupabase(bytes);
+        mediaUrl = uploaded['url'];
+        mediaPath = uploaded['path'];
         mediaType = 'image';
-      } else if (_selectedVideoXFile != null || _selectedVideo != null) {
-        mediaUrl = await _uploadMedia(
-          folder: 'posts/${widget.userId}',
-          extension: 'mp4',
-          xFile: _selectedVideoXFile,
-          file: _selectedVideo,
-          onProgress: (value) {
-            if (mounted) {
-              setState(() => _uploadProgress = value);
-            }
-          },
-        );
+      } else if (_selectedVideoXFile != null) {
+        final uploaded = await _uploadVideoToSupabase(_selectedVideoXFile!);
+        mediaUrl = uploaded['url'];
+        mediaPath = uploaded['path'];
         mediaType = 'video';
       }
 
@@ -226,6 +252,7 @@ class _PostFeedWidgetState extends State<PostFeedWidget> {
         'text': text,
         'mediaUrl': mediaUrl,
         'mediaType': mediaType, // 'image', 'video' ou null
+        'mediaPath': mediaPath, // caminho no Supabase
         'collectionName': widget.collectionName,
         'createdAt': FieldValue.serverTimestamp(),
         'likes': 0,
@@ -233,7 +260,6 @@ class _PostFeedWidgetState extends State<PostFeedWidget> {
         'likedBy': <String>[],
       });
 
-      // Limpar campos
       _textController.clear();
       setState(() {
         _selectedImage = null;
@@ -256,10 +282,17 @@ class _PostFeedWidgetState extends State<PostFeedWidget> {
       }
     } finally {
       if (mounted) {
-        setState(() => _isUploading = false);
+        setState(() {
+          _isUploading = false;
+          _uploadProgress = 0.0;
+        });
       }
     }
   }
+
+  // =========================================================
+  // EXCLUIR POST (REMOVE DO SUPABASE SE TIVER mediaPath)
+  // =========================================================
 
   Future<void> _deletePost(DocumentSnapshot doc) async {
     final data = doc.data() as Map<String, dynamic>? ?? {};
@@ -287,14 +320,15 @@ class _PostFeedWidgetState extends State<PostFeedWidget> {
     if (confirm != true) return;
 
     try {
-      final mediaUrl = data['mediaUrl'] as String?;
-      if (mediaUrl != null && mediaUrl.isNotEmpty) {
+      final mediaPath = data['mediaPath'] as String?;
+      if (mediaPath != null && mediaPath.isNotEmpty) {
         try {
-          await _storage.refFromURL(mediaUrl).delete();
+          await _supabase.storage.from('uploads').remove([mediaPath]);
         } catch (_) {
-          // Ignora falha ao remover mídia antiga
+          // ignora falha ao remover mídia antiga
         }
       }
+
       await doc.reference.delete();
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -310,11 +344,16 @@ class _PostFeedWidgetState extends State<PostFeedWidget> {
     }
   }
 
+  // =========================================================
+  // EDITAR POST (TAMBÉM USA SUPABASE)
+  // =========================================================
+
   Future<void> _editPost(DocumentSnapshot doc) async {
     final data = doc.data() as Map<String, dynamic>? ?? {};
     final textController = TextEditingController(text: data['text'] as String? ?? '');
     final initialMediaUrl = data['mediaUrl'] as String?;
     final initialMediaType = data['mediaType'] as String?;
+    final initialMediaPath = data['mediaPath'] as String?;
 
     XFile? newImageXFile;
     File? newImageFile;
@@ -328,6 +367,7 @@ class _PostFeedWidgetState extends State<PostFeedWidget> {
     Future<void> pickNewImage(StateSetter modalSetState) async {
       final picked = await _selectImageFile();
       if (picked == null) return;
+
       Uint8List? bytes;
       try {
         bytes = await picked.readAsBytes();
@@ -365,7 +405,9 @@ class _PostFeedWidgetState extends State<PostFeedWidget> {
           builder: (context, modalSetState) {
             final bottomInset = MediaQuery.of(context).viewInsets.bottom;
             final String? existingMediaUrl =
-                !removeMedia && (initialMediaUrl?.isNotEmpty ?? false) ? initialMediaUrl : null;
+                !removeMedia && (initialMediaUrl?.isNotEmpty ?? false)
+                    ? initialMediaUrl
+                    : null;
             final hasExistingMedia = existingMediaUrl != null;
             final hasNewImage = newImageXFile != null || newImageFile != null;
             final hasNewVideo = newVideoXFile != null || newVideoFile != null;
@@ -497,16 +539,19 @@ class _PostFeedWidgetState extends State<PostFeedWidget> {
                       runSpacing: 8,
                       children: [
                         ElevatedButton.icon(
-                          onPressed: disableActions ? null : () => pickNewImage(modalSetState),
+                          onPressed:
+                              disableActions ? null : () => pickNewImage(modalSetState),
                           icon: const Icon(Icons.photo),
                           label: const Text('Substituir foto'),
                         ),
                         ElevatedButton.icon(
-                          onPressed: disableActions ? null : () => pickNewVideo(modalSetState),
+                          onPressed:
+                              disableActions ? null : () => pickNewVideo(modalSetState),
                           icon: const Icon(Icons.video_library),
                           label: const Text('Substituir vídeo'),
                         ),
-                        if ((hasExistingMedia || hasNewImage || hasNewVideo) && !disableActions)
+                        if ((hasExistingMedia || hasNewImage || hasNewVideo) &&
+                            !disableActions)
                           OutlinedButton.icon(
                             onPressed: () {
                               modalSetState(() {
@@ -525,13 +570,16 @@ class _PostFeedWidgetState extends State<PostFeedWidget> {
                     ),
                     if (isSaving) ...[
                       const SizedBox(height: 12),
-                      LinearProgressIndicator(value: editProgress == 0 ? null : editProgress),
+                      LinearProgressIndicator(
+                        value: editProgress == 0 ? null : editProgress,
+                      ),
                       const SizedBox(height: 4),
                       Text(
                         editProgress == 0
                             ? 'Salvando...'
                             : '${(editProgress * 100).toStringAsFixed(0)}% enviado',
-                        style: const TextStyle(fontSize: 12, color: Colors.grey),
+                        style:
+                            const TextStyle(fontSize: 12, color: Colors.grey),
                       ),
                     ],
                     const SizedBox(height: 16),
@@ -544,7 +592,9 @@ class _PostFeedWidgetState extends State<PostFeedWidget> {
                                 final newText = textController.text.trim();
                                 final hasContent = newText.isNotEmpty ||
                                     (!removeMedia &&
-                                        (hasExistingMedia || hasNewImage || hasNewVideo));
+                                        (hasExistingMedia ||
+                                            hasNewImage ||
+                                            hasNewVideo));
                                 if (!hasContent) {
                                   ScaffoldMessenger.of(context).showSnackBar(
                                     const SnackBar(
@@ -564,48 +614,77 @@ class _PostFeedWidgetState extends State<PostFeedWidget> {
                                 try {
                                   String? mediaUrl = initialMediaUrl;
                                   String? mediaType = initialMediaType;
+                                  String? mediaPath = initialMediaPath;
 
-                                  if (removeMedia && initialMediaUrl != null) {
+                                  // remover mídia
+                                  if (removeMedia && initialMediaPath != null) {
                                     try {
-                                      await _storage.refFromURL(initialMediaUrl).delete();
+                                      await _supabase.storage
+                                          .from('uploads')
+                                          .remove([initialMediaPath]);
                                     } catch (_) {}
                                     mediaUrl = null;
                                     mediaType = null;
-                                  } else if (hasNewImage || hasNewVideo) {
-                                    final newUrl = await _uploadMedia(
-                                      folder: 'posts/${widget.userId}',
-                                      extension: hasNewImage ? 'jpg' : 'mp4',
-                                      xFile: hasNewImage ? newImageXFile : newVideoXFile,
-                                      file: hasNewImage ? newImageFile : newVideoFile,
-                                      onProgress: (value) {
-                                        modalSetState(() {
-                                          editProgress = value;
-                                        });
-                                      },
-                                    );
+                                    mediaPath = null;
+                                  }
+                                  // substituir por nova
+                                  else if (hasNewImage || hasNewVideo) {
+                                    Map<String, String> uploaded;
 
-                                    if (initialMediaUrl != null && initialMediaUrl.isNotEmpty) {
+                                    if (hasNewImage) {
+                                      Uint8List bytes;
+                                      if (newImageBytes != null) {
+                                        bytes = newImageBytes!;
+                                      } else if (newImageFile != null) {
+                                        bytes = await newImageFile!.readAsBytes();
+                                      } else {
+                                        throw Exception(
+                                            'Erro ao ler nova imagem.');
+                                      }
+                                      uploaded =
+                                          await _uploadImageToSupabase(bytes);
+                                      mediaType = 'image';
+                                    } else {
+                                      // vídeo
+                                      final xfile = newVideoXFile;
+                                      if (xfile == null) {
+                                        throw Exception(
+                                            'Erro ao ler novo vídeo.');
+                                      }
+                                      uploaded =
+                                          await _uploadVideoToSupabase(xfile);
+                                      mediaType = 'video';
+                                    }
+
+                                    // remove mídia antiga se tiver path
+                                    if (initialMediaPath != null &&
+                                        initialMediaPath.isNotEmpty) {
                                       try {
-                                        await _storage.refFromURL(initialMediaUrl).delete();
+                                        await _supabase.storage
+                                            .from('uploads')
+                                            .remove([initialMediaPath]);
                                       } catch (_) {}
                                     }
 
-                                    mediaUrl = newUrl;
-                                    mediaType = hasNewImage ? 'image' : 'video';
+                                    mediaUrl = uploaded['url'];
+                                    mediaPath = uploaded['path'];
                                   }
 
                                   await doc.reference.update({
                                     'text': newText,
                                     'mediaUrl': mediaUrl,
                                     'mediaType': mediaType,
+                                    'mediaPath': mediaPath,
                                     'updatedAt': FieldValue.serverTimestamp(),
                                   });
 
                                   if (mounted) {
                                     Navigator.of(context).pop();
-                                    ScaffoldMessenger.of(this.context).showSnackBar(
+                                    ScaffoldMessenger.of(this.context)
+                                        .showSnackBar(
                                       const SnackBar(
-                                        content: Text('Publicação atualizada com sucesso!'),
+                                        content: Text(
+                                            'Publicação atualizada com sucesso!'),
                                       ),
                                     );
                                   }
@@ -614,7 +693,9 @@ class _PostFeedWidgetState extends State<PostFeedWidget> {
                                     isSaving = false;
                                   });
                                   ScaffoldMessenger.of(context).showSnackBar(
-                                    SnackBar(content: Text('Erro ao atualizar: $e')),
+                                    SnackBar(
+                                        content:
+                                            Text('Erro ao atualizar: $e')),
                                   );
                                 }
                               },
@@ -638,6 +719,10 @@ class _PostFeedWidgetState extends State<PostFeedWidget> {
     textController.dispose();
   }
 
+  // =========================================================
+  // CARD DE CRIAÇÃO DO POST
+  // =========================================================
+
   Widget _buildCreatePostCard() {
     return Card(
       margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
@@ -647,7 +732,6 @@ class _PostFeedWidgetState extends State<PostFeedWidget> {
         padding: const EdgeInsets.all(12),
         child: Column(
           children: [
-            // Campo de texto
             Row(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
@@ -682,7 +766,6 @@ class _PostFeedWidgetState extends State<PostFeedWidget> {
                 ),
               ],
             ),
-            // Preview de mídia selecionada
             if (_selectedImageBytes != null || _selectedImage != null) ...[
               const SizedBox(height: 12),
               Stack(
@@ -706,7 +789,9 @@ class _PostFeedWidgetState extends State<PostFeedWidget> {
                             : Container(
                                 height: 200,
                                 color: Colors.grey.shade300,
-                                child: const Center(child: CircularProgressIndicator()),
+                                child: const Center(
+                                  child: CircularProgressIndicator(),
+                                ),
                               ),
                   ),
                   Positioned(
@@ -760,7 +845,6 @@ class _PostFeedWidgetState extends State<PostFeedWidget> {
                 ],
               ),
             ],
-            // Botões de ação
             const SizedBox(height: 12),
             Row(
               children: [
@@ -797,7 +881,8 @@ class _PostFeedWidgetState extends State<PostFeedWidget> {
                             width: 20,
                             child: CircularProgressIndicator(
                               strokeWidth: 2,
-                              valueColor: AlwaysStoppedAnimation<Color>(
+                              valueColor:
+                                  const AlwaysStoppedAnimation<Color>(
                                 Colors.white,
                               ),
                             ),
@@ -807,14 +892,17 @@ class _PostFeedWidgetState extends State<PostFeedWidget> {
                 ),
               ],
             ),
-            // Indicador de progresso
             if (_isUploading) ...[
               const SizedBox(height: 8),
-              LinearProgressIndicator(value: _uploadProgress),
+              LinearProgressIndicator(
+                value: (_uploadProgress > 0 && _uploadProgress < 1)
+                    ? _uploadProgress
+                    : null, // indeterminado
+              ),
               const SizedBox(height: 4),
-              Text(
-                '${(_uploadProgress * 100).toStringAsFixed(0)}%',
-                style: const TextStyle(fontSize: 12, color: Colors.grey),
+              const Text(
+                'Enviando...',
+                style: TextStyle(fontSize: 12, color: Colors.grey),
                 textAlign: TextAlign.center,
               ),
             ],
@@ -823,6 +911,10 @@ class _PostFeedWidgetState extends State<PostFeedWidget> {
       ),
     );
   }
+
+  // =========================================================
+  // BUILD PRINCIPAL
+  // =========================================================
 
   @override
   Widget build(BuildContext context) {
@@ -919,6 +1011,10 @@ class _PostFeedWidgetState extends State<PostFeedWidget> {
   }
 }
 
+// =====================================================================
+// A PARTIR DAQUI: _PostCard (NÃO PRECISA DE SUPABASE, MEXE SÓ COM FIRESTORE)
+// =====================================================================
+
 class _PostCard extends StatefulWidget {
   final String docId;
   final Map<String, dynamic> data;
@@ -996,8 +1092,10 @@ class _PostCardState extends State<_PostCard> {
   bool _canManageComment(String? commentUserId) {
     if (widget.canManage) return true;
     if (commentUserId == null) return false;
-    return widget.currentUserId != null && widget.currentUserId == commentUserId;
+    return widget.currentUserId != null &&
+        widget.currentUserId == commentUserId;
   }
+
   TextEditingController _replyControllerFor(String commentId) {
     return _replyControllers.putIfAbsent(commentId, TextEditingController.new);
   }
@@ -1076,12 +1174,15 @@ class _PostCardState extends State<_PostCard> {
                         if (context.mounted) {
                           Navigator.pop(sheetContext);
                           ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(content: Text('Comentário atualizado.')),
+                            const SnackBar(
+                                content: Text('Comentário atualizado.')),
                           );
                         }
                       } catch (e) {
                         ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(content: Text('Erro ao editar comentário: $e')),
+                          SnackBar(
+                              content:
+                                  Text('Erro ao editar comentário: $e')),
                         );
                       }
                     },
@@ -1259,16 +1360,13 @@ class _PostCardState extends State<_PostCard> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Cabeçalho do post
           ListTile(
             leading: CircleAvatar(
               backgroundColor: Colors.grey.shade300,
               backgroundImage: userPhotoUrl.isNotEmpty
                   ? NetworkImage(userPhotoUrl)
                   : null,
-              child: userPhotoUrl.isEmpty
-                  ? const Icon(Icons.person)
-                  : null,
+              child: userPhotoUrl.isEmpty ? const Icon(Icons.person) : null,
             ),
             title: Text(
               userName,
@@ -1300,7 +1398,6 @@ class _PostCardState extends State<_PostCard> {
                   )
                 : null,
           ),
-          // Texto do post
           if (text.isNotEmpty)
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 16),
@@ -1309,7 +1406,6 @@ class _PostCardState extends State<_PostCard> {
                 style: const TextStyle(fontSize: 15),
               ),
             ),
-          // Mídia (imagem ou vídeo)
           if (mediaUrl != null) ...[
             const SizedBox(height: 8),
             if (mediaType == 'image')
@@ -1339,7 +1435,6 @@ class _PostCardState extends State<_PostCard> {
                 ),
               ),
           ],
-          // Ações do post
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 8),
             child: Row(
@@ -1837,4 +1932,3 @@ class _PostCardState extends State<_PostCard> {
     super.dispose();
   }
 }
-

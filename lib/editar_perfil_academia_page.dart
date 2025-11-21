@@ -1,11 +1,18 @@
+// ignore_for_file: use_build_context_synchronously
+
 import 'dart:typed_data';
+import 'dart:io';
+
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:firebase_storage/firebase_storage.dart';
+import 'package:image/image.dart' as img; // ✔ para recorte da imagem
 import 'package:uuid/uuid.dart';
-import 'package:flutter_image_compress/flutter_image_compress.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+
+// MIXIN DO UPLOAD
+import 'package:gym_app/mixins/upload_mixin.dart';
 
 class EditarPerfilAcademiaPage extends StatefulWidget {
   const EditarPerfilAcademiaPage({super.key});
@@ -14,13 +21,13 @@ class EditarPerfilAcademiaPage extends StatefulWidget {
   State<EditarPerfilAcademiaPage> createState() => _EditarPerfilAcademiaPageState();
 }
 
-class _EditarPerfilAcademiaPageState extends State<EditarPerfilAcademiaPage> {
+class _EditarPerfilAcademiaPageState extends State<EditarPerfilAcademiaPage>
+    with UploadMixin { // ✔ IMPLEMENTA O MIXIN
   final _formKey = GlobalKey<FormState>();
   final _firestore = FirebaseFirestore.instance;
-  final _storage = FirebaseStorage.instance;
   final _picker = ImagePicker();
 
-  // Controladores de texto
+  // Controladores
   final TextEditingController _nomeController = TextEditingController();
   final TextEditingController _descricaoController = TextEditingController();
   final TextEditingController _localizacaoController = TextEditingController();
@@ -29,21 +36,18 @@ class _EditarPerfilAcademiaPageState extends State<EditarPerfilAcademiaPage> {
   final TextEditingController _linkController = TextEditingController();
 
   // Imagens
-  XFile? _fotoPerfilXFile;
-  XFile? _fotoCapaXFile;
   Uint8List? _fotoPerfilBytes;
   Uint8List? _fotoCapaBytes;
   String? _fotoPerfilUrlAtual;
   String? _fotoCapaUrlAtual;
-  
+
   bool _isLoading = false;
   bool _isSaving = false;
-  double _uploadProgress = 0.0;
 
-  // Recuperar UID do usuário autenticado (academia)
+  // UID
   String get _academiaId {
     final user = FirebaseAuth.instance.currentUser;
-    return user?.uid ?? 'academia_demo'; // 👈 substitua quando tiver autenticação
+    return user?.uid ?? 'academia_demo';
   }
 
   @override
@@ -65,9 +69,9 @@ class _EditarPerfilAcademiaPageState extends State<EditarPerfilAcademiaPage> {
 
   Future<void> _carregarDados() async {
     setState(() => _isLoading = true);
+
     try {
-      final doc =
-          await _firestore.collection('academias').doc(_academiaId).get();
+      final doc = await _firestore.collection('academias').doc(_academiaId).get();
 
       if (doc.exists) {
         final data = doc.data()!;
@@ -82,200 +86,103 @@ class _EditarPerfilAcademiaPageState extends State<EditarPerfilAcademiaPage> {
       }
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Erro ao carregar dados: $e')),
+        SnackBar(content: Text("Erro ao carregar: $e")),
       );
     }
+
     setState(() => _isLoading = false);
   }
 
+  // =========================================================
+  // SELEÇÃO DA FOTO DE PERFIL
+  // =========================================================
+
   Future<void> _escolherFotoPerfil() async {
-    final source = await showModalBottomSheet<ImageSource>(
-      context: context,
-      builder: (context) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ListTile(
-              leading: const Icon(Icons.photo_library),
-              title: const Text('Galeria'),
-              onTap: () => Navigator.pop(context, ImageSource.gallery),
-            ),
-            ListTile(
-              leading: const Icon(Icons.camera_alt),
-              title: const Text('Câmera'),
-              onTap: () => Navigator.pop(context, ImageSource.camera),
-            ),
-          ],
-        ),
-      ),
-    );
+    final picked = await _picker.pickImage(source: ImageSource.gallery);
+    if (picked == null) return;
 
-    if (source == null) return;
+    final bytes = await picked.readAsBytes();
+    setState(() => _fotoPerfilBytes = bytes);
+  }
 
-    try {
-      final picked = await _picker.pickImage(
-        source: source,
-        imageQuality: 85,
-        maxWidth: 1200,
-      );
-      if (picked != null) {
-        final bytes = await picked.readAsBytes();
-        setState(() {
-          _fotoPerfilXFile = picked;
-          _fotoPerfilBytes = bytes;
-        });
-      }
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Erro ao selecionar foto')),
-      );
+  // =========================================================
+  // SELEÇÃO DA FOTO DE CAPA (COM FORÇA PARA PAISAGEM)
+  // =========================================================
+
+  /// Força o crop para 16:9 (capa estilo profissional)
+  Uint8List _forcarPaisagem(Uint8List imgBytes) {
+    final image = img.decodeImage(imgBytes);
+    if (image == null) return imgBytes;
+
+    final width = image.width;
+    final height = image.height;
+
+    // Queremos 16:9
+    final targetRatio = 16 / 9;
+    final currentRatio = width / height;
+
+    img.Image cropped;
+
+    if (currentRatio > targetRatio) {
+      // A imagem é mais "larga" do que deveria → cortar laterais
+      final newWidth = (height * targetRatio).toInt();
+      final xOffset = ((width - newWidth) / 2).toInt();
+
+      cropped = img.copyCrop(image,
+          x: xOffset, y: 0, width: newWidth, height: height);
+    } else {
+      // A imagem é mais "alta" → cortar topo/bottom
+      final newHeight = (width / targetRatio).toInt();
+      final yOffset = ((height - newHeight) / 2).toInt();
+
+      cropped = img.copyCrop(image,
+          x: 0, y: yOffset, width: width, height: newHeight);
     }
+
+    return Uint8List.fromList(img.encodeJpg(cropped, quality: 90));
   }
 
   Future<void> _escolherFotoCapa() async {
-    final source = await showModalBottomSheet<ImageSource>(
-      context: context,
-      builder: (context) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ListTile(
-              leading: const Icon(Icons.photo_library),
-              title: const Text('Galeria'),
-              onTap: () => Navigator.pop(context, ImageSource.gallery),
-            ),
-            ListTile(
-              leading: const Icon(Icons.camera_alt),
-              title: const Text('Câmera'),
-              onTap: () => Navigator.pop(context, ImageSource.camera),
-            ),
-          ],
-        ),
-      ),
-    );
+    final picked = await _picker.pickImage(source: ImageSource.gallery);
+    if (picked == null) return;
 
-    if (source == null) return;
+    final originalBytes = await picked.readAsBytes();
 
-    try {
-      final picked = await _picker.pickImage(
-        source: source,
-        imageQuality: 85,
-        maxWidth: 1920,
-      );
-      if (picked != null) {
-        final bytes = await picked.readAsBytes();
-        setState(() {
-          _fotoCapaXFile = picked;
-          _fotoCapaBytes = bytes;
-        });
-      }
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Erro ao selecionar foto de capa')),
-      );
-    }
+    // ✔ força paisagem 16:9
+    final corrigida = _forcarPaisagem(originalBytes);
+
+    setState(() => _fotoCapaBytes = corrigida);
   }
 
-  Future<String> _uploadImagem({
-    required String folder,
-    XFile? xFile,
-    Uint8List? cachedBytes,
-    int minWidth = 1080,
-    int minHeight = 1080,
-    int quality = 75,
-  }) async {
-    try {
-      final id = const Uuid().v4();
-      final ref = _storage.ref().child('$folder/$id.jpg');
-      final metadata = SettableMetadata(contentType: 'image/jpeg');
-      Uint8List? originalBytes = cachedBytes;
-
-      if (originalBytes == null) {
-        if (xFile != null) {
-          originalBytes = await xFile.readAsBytes();
-        } else {
-          throw Exception('Nenhuma imagem selecionada.');
-        }
-      }
-
-      final compressed = await FlutterImageCompress.compressWithList(
-        originalBytes,
-        minWidth: minWidth,
-        minHeight: minHeight,
-        quality: quality,
-        format: CompressFormat.jpeg,
-      );
-
-      final Uint8List dataToUpload =
-          compressed.isNotEmpty ? Uint8List.fromList(compressed) : originalBytes;
-
-      final uploadTask = ref.putData(
-        dataToUpload,
-        metadata,
-      );
-
-      uploadTask.snapshotEvents.listen((TaskSnapshot snapshot) {
-        final progress = snapshot.bytesTransferred /
-            (snapshot.totalBytes == 0 ? 1 : snapshot.totalBytes);
-        if (mounted) {
-          setState(() => _uploadProgress = progress);
-        }
-      }, onError: (error) {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Falha no upload: $error')),
-          );
-        }
-      });
-
-      final snapshot = await uploadTask;
-      if (mounted) {
-        setState(() => _uploadProgress = 1.0);
-      }
-      final downloadUrl = await snapshot.ref.getDownloadURL();
-      return downloadUrl;
-    } catch (error) {
-      rethrow;
-    }
-  }
+  // =========================================================
+  // SALVAR PERFIL (AGORA USANDO O MIXIN)
+  // =========================================================
 
   Future<void> _salvarPerfil() async {
     if (!_formKey.currentState!.validate()) return;
 
-    setState(() {
-      _isSaving = true;
-      _uploadProgress = 0.0;
-    });
+    setState(() => _isSaving = true);
 
     try {
       String? fotoPerfilUrl = _fotoPerfilUrlAtual;
       String? fotoCapaUrl = _fotoCapaUrlAtual;
 
-      // Upload da foto de perfil se foi selecionada
-      if (_fotoPerfilXFile != null) {
-        fotoPerfilUrl = await _uploadImagem(
-          folder: 'academias/$_academiaId/perfil',
-          xFile: _fotoPerfilXFile,
-          cachedBytes: _fotoPerfilBytes,
-          minWidth: 600,
-          minHeight: 600,
-          quality: 72,
+      // ✔ FOTO DE PERFIL
+      if (_fotoPerfilBytes != null) {
+        fotoPerfilUrl = await uploadImageToSupabase(
+          bytes: _fotoPerfilBytes!,
+          folder: "academias/$_academiaId/perfil",
         );
       }
 
-      // Upload da foto de capa se foi selecionada
-      if (_fotoCapaXFile != null) {
-        fotoCapaUrl = await _uploadImagem(
-          folder: 'academias/$_academiaId/capa',
-          xFile: _fotoCapaXFile,
-          cachedBytes: _fotoCapaBytes,
-          minWidth: 1600,
-          minHeight: 900,
-          quality: 80,
+      // ✔ FOTO DE CAPA (já está paisagem)
+      if (_fotoCapaBytes != null) {
+        fotoCapaUrl = await uploadImageToSupabase(
+          bytes: _fotoCapaBytes!,
+          folder: "academias/$_academiaId/capa",
         );
       }
 
-      // Salvar dados no Firestore
       await _firestore.collection('academias').doc(_academiaId).set({
         'nome': _nomeController.text.trim(),
         'descricao': _descricaoController.text.trim(),
@@ -283,71 +190,93 @@ class _EditarPerfilAcademiaPageState extends State<EditarPerfilAcademiaPage> {
         'email': _emailController.text.trim(),
         'whatsapp': _whatsappController.text.trim(),
         'link': _linkController.text.trim(),
-        if (fotoPerfilUrl != null) 'fotoPerfilUrl': fotoPerfilUrl,
-        if (fotoCapaUrl != null) 'capaUrl': fotoCapaUrl,
+        'fotoPerfilUrl': fotoPerfilUrl,
+        'capaUrl': fotoCapaUrl,
         'atualizadoEm': FieldValue.serverTimestamp(),
       }, SetOptions(merge: true));
 
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Perfil atualizado com sucesso!')),
-        );
-        Navigator.pop(context);
-      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Perfil atualizado com sucesso!")),
+      );
+
+      Navigator.pop(context);
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Erro ao salvar: $e')),
-        );
-      }
-    } finally {
-      if (mounted) {
-        setState(() => _isSaving = false);
-      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text("Erro ao salvar: $e")),
+      );
     }
+
+    setState(() => _isSaving = false);
+  }
+
+  // =========================================================
+  // PREVIEW DAS FOTOS
+  // =========================================================
+
+  Widget _buildFotoPerfilPreview() {
+    ImageProvider<Object>? provider;
+
+    if (_fotoPerfilBytes != null) {
+      provider = MemoryImage(_fotoPerfilBytes!);
+    } else if (_fotoPerfilUrlAtual != null && _fotoPerfilUrlAtual!.isNotEmpty) {
+      provider = NetworkImage(_fotoPerfilUrlAtual!);
+    }
+
+    return Stack(
+      children: [
+        CircleAvatar(
+          radius: 60,
+          backgroundColor: Colors.grey.shade300,
+          backgroundImage: provider,
+          child: provider == null
+              ? const Icon(Icons.person, size: 60, color: Colors.grey)
+              : null,
+        ),
+        Positioned(
+          bottom: 0,
+          right: 0,
+          child: CircleAvatar(
+            backgroundColor: Colors.red,
+            radius: 20,
+            child: IconButton(
+              icon: const Icon(Icons.camera_alt, color: Colors.white, size: 20),
+              onPressed: _isSaving ? null : _escolherFotoPerfil,
+            ),
+          ),
+        ),
+      ],
+    );
   }
 
   Widget _buildFotoCapaPreview() {
+    ImageProvider<Object>? provider;
+
+    if (_fotoCapaBytes != null) {
+      provider = MemoryImage(_fotoCapaBytes!);
+    } else if (_fotoCapaUrlAtual != null && _fotoCapaUrlAtual!.isNotEmpty) {
+      provider = NetworkImage(_fotoCapaUrlAtual!);
+    }
+
     return Stack(
       children: [
         Container(
           height: 200,
-          width: double.infinity,
           decoration: BoxDecoration(
+            borderRadius: BorderRadius.circular(16),
             color: Colors.grey.shade300,
-            borderRadius: BorderRadius.circular(12),
           ),
-          child: _fotoCapaXFile != null
-              ? ClipRRect(
-                  borderRadius: BorderRadius.circular(12),
-                  child: _fotoCapaBytes != null
-                      ? Image.memory(
-                          _fotoCapaBytes!,
-                          fit: BoxFit.cover,
-                        )
-                      : const SizedBox.shrink(),
-                )
-              : _fotoCapaUrlAtual != null
-                  ? ClipRRect(
-                      borderRadius: BorderRadius.circular(12),
-                      child: Image.network(
-                        _fotoCapaUrlAtual!,
-                        fit: BoxFit.cover,
-                        errorBuilder: (context, error, stackTrace) => const Icon(
-                          Icons.image,
-                          size: 60,
-                          color: Colors.grey,
-                        ),
-                      ),
-                    )
-                  : const Icon(Icons.image, size: 60, color: Colors.grey),
+          clipBehavior: Clip.hardEdge,
+          child: provider != null
+              ? Image(image: provider, fit: BoxFit.cover)
+              : const Icon(Icons.image, size: 60, color: Colors.grey),
         ),
         Positioned(
-          bottom: 12,
-          right: 12,
-          child: FloatingActionButton.small(
-            onPressed: _isSaving ? null : _escolherFotoCapa,
+          bottom: 16,
+          right: 16,
+          child: FloatingActionButton(
+            mini: true,
             backgroundColor: Colors.red,
+            onPressed: _isSaving ? null : _escolherFotoCapa,
             child: const Icon(Icons.camera_alt, color: Colors.white),
           ),
         ),
@@ -355,59 +284,9 @@ class _EditarPerfilAcademiaPageState extends State<EditarPerfilAcademiaPage> {
     );
   }
 
-  Widget _buildFotoPerfilPreview() {
-    return Stack(
-      children: [
-        Container(
-          width: 120,
-          height: 120,
-          decoration: BoxDecoration(
-            color: Colors.grey.shade300,
-            shape: BoxShape.circle,
-            border: Border.all(color: Colors.white, width: 4),
-          ),
-          child: _fotoPerfilXFile != null
-              ? ClipOval(
-                  child: _fotoPerfilBytes != null
-                      ? Image.memory(
-                          _fotoPerfilBytes!,
-                          fit: BoxFit.cover,
-                        )
-                      : const SizedBox.shrink(),
-                )
-              : _fotoPerfilUrlAtual != null
-                  ? ClipOval(
-                      child: Image.network(
-                        _fotoPerfilUrlAtual!,
-                        fit: BoxFit.cover,
-                        errorBuilder: (context, error, stackTrace) => const Icon(
-                          Icons.person,
-                          size: 60,
-                          color: Colors.grey,
-                        ),
-                      ),
-                    )
-                  : const Icon(Icons.person, size: 60, color: Colors.grey),
-        ),
-        Positioned(
-          bottom: 0,
-          right: 0,
-          child: Container(
-            decoration: const BoxDecoration(
-              color: Colors.red,
-              shape: BoxShape.circle,
-            ),
-            child: IconButton(
-              onPressed: _isSaving ? null : _escolherFotoPerfil,
-              icon: const Icon(Icons.camera_alt, color: Colors.white, size: 20),
-              padding: EdgeInsets.zero,
-              constraints: const BoxConstraints(),
-            ),
-          ),
-        ),
-      ],
-    );
-  }
+  // =========================================================
+  // UI
+  // =========================================================
 
   @override
   Widget build(BuildContext context) {
@@ -418,148 +297,76 @@ class _EditarPerfilAcademiaPageState extends State<EditarPerfilAcademiaPage> {
       ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator(color: Colors.red))
-          : Form(
-              key: _formKey,
-              child: ListView(
-                children: [
-                  // Foto de capa
-                  Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: _buildFotoCapaPreview(),
-                  ),
-                  // Foto de perfil (centralizada)
-                  Center(
-                    child: Transform.translate(
-                      offset: const Offset(0, -60),
-                      child: _buildFotoPerfilPreview(),
-                    ),
-                  ),
-                  const SizedBox(height: 20),
-                  // Campos do formulário
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                    child: Column(
-                      children: [
-                        TextFormField(
-                          controller: _nomeController,
-                          decoration: InputDecoration(
-                            labelText: "Nome da academia",
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            filled: true,
-                            fillColor: Colors.white,
-                          ),
-                          validator: (value) =>
-                              value == null || value.isEmpty ? "Informe o nome da academia" : null,
-                        ),
-                        const SizedBox(height: 16),
-                        TextFormField(
-                          controller: _descricaoController,
-                          decoration: InputDecoration(
-                            labelText: "Breve descrição",
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            filled: true,
-                            fillColor: Colors.white,
-                          ),
-                          maxLines: 3,
-                        ),
-                        const SizedBox(height: 16),
-                        TextFormField(
-                          controller: _localizacaoController,
-                          decoration: InputDecoration(
-                            labelText: "Localização",
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            filled: true,
-                            fillColor: Colors.white,
-                          ),
-                        ),
-                        const SizedBox(height: 16),
-                        const Text(
-                          "Informações para contato",
-                          style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                        ),
-                        const SizedBox(height: 8),
-                        TextFormField(
-                          controller: _emailController,
-                          decoration: InputDecoration(
-                            labelText: "E-mail",
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            filled: true,
-                            fillColor: Colors.white,
-                          ),
-                          keyboardType: TextInputType.emailAddress,
-                        ),
-                        const SizedBox(height: 12),
-                        TextFormField(
-                          controller: _whatsappController,
-                          decoration: InputDecoration(
-                            labelText: "WhatsApp",
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            filled: true,
-                            fillColor: Colors.white,
-                          ),
-                          keyboardType: TextInputType.phone,
-                        ),
-                        const SizedBox(height: 12),
-                        TextFormField(
-                          controller: _linkController,
-                          decoration: InputDecoration(
-                            labelText: "Links (Instagram, site, etc.)",
-                            border: OutlineInputBorder(
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            filled: true,
-                            fillColor: Colors.white,
-                          ),
-                        ),
-                        const SizedBox(height: 24),
-                        // Indicador de progresso
-                        if (_isSaving) ...[
-                          LinearProgressIndicator(
-                            value: _uploadProgress,
-                            backgroundColor: Colors.grey.shade300,
-                            valueColor: const AlwaysStoppedAnimation<Color>(Colors.red),
-                          ),
-                          const SizedBox(height: 8),
-                          Text(
-                            '${(_uploadProgress * 100).toStringAsFixed(0)}% enviado',
-                            style: const TextStyle(color: Colors.grey),
-                            textAlign: TextAlign.center,
-                          ),
-                          const SizedBox(height: 12),
-                        ],
-                        SizedBox(
-                          width: double.infinity,
-                          child: ElevatedButton.icon(
-                            onPressed: _isSaving ? null : _salvarPerfil,
-                            icon: const Icon(Icons.save),
-                            label: Text(_isSaving ? "Salvando..." : "Salvar Alterações"),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.red,
-                              foregroundColor: Colors.white,
-                              padding: const EdgeInsets.symmetric(vertical: 14),
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(height: 24),
-                      ],
-                    ),
-                  ),
-                ],
-              ),
+          : _buildForm(),
+    );
+  }
+
+  Widget _buildForm() {
+    return Form(
+      key: _formKey,
+      child: ListView(
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        children: [
+          const SizedBox(height: 16),
+          _buildFotoCapaPreview(),
+          const SizedBox(height: 20),
+          Center(
+            child: Transform.translate(
+              offset: const Offset(0, -60),
+              child: _buildFotoPerfilPreview(),
             ),
+          ),
+          const SizedBox(height: 0),
+
+          // CAMPOS
+          _campo(_nomeController, "Nome da academia", validator: true),
+          const SizedBox(height: 16),
+          _campo(_descricaoController, "Descrição", maxLines: 3),
+          const SizedBox(height: 16),
+          _campo(_localizacaoController, "Localização"),
+          const SizedBox(height: 16),
+          const Text("Informações de Contato",
+              style: TextStyle(fontWeight: FontWeight.bold)),
+          const SizedBox(height: 8),
+          _campo(_emailController, "E-mail"),
+          const SizedBox(height: 12),
+          _campo(_whatsappController, "WhatsApp"),
+          const SizedBox(height: 12),
+          _campo(_linkController, "Links (Instagram, site, etc.)"),
+          const SizedBox(height: 24),
+
+          ElevatedButton.icon(
+            onPressed: _isSaving ? null : _salvarPerfil,
+            icon: const Icon(Icons.save),
+            label: Text(_isSaving ? "Salvando..." : "Salvar Alterações"),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red,
+              foregroundColor: Colors.white,
+              padding: const EdgeInsets.symmetric(vertical: 14),
+              shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12)),
+            ),
+          ),
+          const SizedBox(height: 24),
+        ],
+      ),
+    );
+  }
+
+  Widget _campo(TextEditingController c, String label,
+      {int maxLines = 1, bool validator = false}) {
+    return TextFormField(
+      controller: c,
+      maxLines: maxLines,
+      validator:
+          validator ? (v) => v == null || v.isEmpty ? "Campo obrigatório" : null : null,
+      decoration: InputDecoration(
+        labelText: label,
+        filled: true,
+        fillColor: Colors.white,
+        border:
+            OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+      ),
     );
   }
 }
