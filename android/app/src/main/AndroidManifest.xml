@@ -10,7 +10,8 @@
     <application
         android:label="gym_app_completo"
         android:name="${applicationName}"
-        android:icon="@mipmap/ic_launcher">
+        android:icon="@mipmap/ic_launcher"
+        android:enableOnBackInvokedCallback="true">
 
         <!-- ✅ CHAVE GOOGLE MAPS DENTRO DO APPLICATION -->
         <meta-data

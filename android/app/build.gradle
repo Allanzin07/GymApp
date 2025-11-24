@@ -1,10 +1,9 @@
 plugins {
     id "com.android.application"
-    // START: FlutterFire Configuration
-    id 'com.google.gms.google-services'
-    // END: FlutterFire Configuration
     id "kotlin-android"
-    // The Flutter Gradle Plugin must be applied after the Android and Kotlin Gradle plugins.
+    // FlutterFire (Google services)
+    id "com.google.gms.google-services"
+    // Flutter plugin
     id "dev.flutter.flutter-gradle-plugin"
 }
 
@@ -16,19 +15,12 @@ if (localPropertiesFile.exists()) {
     }
 }
 
-def flutterVersionCode = localProperties.getProperty("flutter.versionCode")
-if (flutterVersionCode == null) {
-    flutterVersionCode = "1"
-}
-
-def flutterVersionName = localProperties.getProperty("flutter.versionName")
-if (flutterVersionName == null) {
-    flutterVersionName = "1.0"
-}
+def flutterVersionCode = localProperties.getProperty("flutter.versionCode") ?: "1"
+def flutterVersionName = localProperties.getProperty("flutter.versionName") ?: "1.0"
 
 android {
     namespace = "com.example.gym_app"
-    compileSdk 34
+    compileSdk 36
 
     ndkVersion = flutter.ndkVersion
 
@@ -39,15 +31,19 @@ android {
 
     defaultConfig {
         applicationId "com.example.gym_app"
-        minSdk 23
-        targetSdk 34
+        minSdkVersion flutter.minSdkVersion
+        targetSdk 36
         versionCode flutterVersionCode.toInteger()
         versionName flutterVersionName
     }
 
     buildTypes {
         release {
+            // Substitua por signingConfigs.release se possuir assinatura própria
             signingConfig signingConfigs.debug
+            // shrinkResources true
+            // minifyEnabled true
+            // proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
         }
     }
 
@@ -56,12 +52,11 @@ android {
     }
 }
 
-
-// fallback / safety: força jvmTarget para todas as tasks Kotlin (resolve inconsistências)
+// Garantia final para todas as tasks Kotlin
 tasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinCompile).configureEach {
     kotlinOptions {
         jvmTarget = "17"
-        freeCompilerArgs = freeCompilerArgs + ["-Xjvm-default=all"]
+        freeCompilerArgs += ["-Xjvm-default=all"]
     }
 }
 
@@ -69,5 +64,5 @@ flutter {
     source = "../.."
 }
 
+// Obrigatório para Firebase
 apply plugin: 'com.google.gms.google-services'
-
