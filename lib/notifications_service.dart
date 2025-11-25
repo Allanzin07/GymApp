@@ -30,12 +30,13 @@ class NotificationsService {
     return doc;
   }
 
-  /// Stream de notificações por destinatário (ordenadas por data desc).
+  /// Stream de notificações por destinatário (ordenadas por data desc no cliente).
+  /// Nota: Removido orderBy da query para evitar necessidade de índice composto.
+  /// A ordenação é feita no cliente.
   Stream<QuerySnapshot<Map<String, dynamic>>> streamNotificationsForUser(String receiverId) {
     return _firestore
         .collection(collection)
         .where('receiverId', isEqualTo: receiverId)
-        .orderBy('createdAt', descending: true)
         .snapshots();
   }
 

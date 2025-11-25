@@ -1,0 +1,21 @@
+{
+    // Configurações do Flutter para melhorar o hot reload e manter a sessão de debug ativa
+    "dart.flutterHotReloadOnSave": "all",
+    "dart.flutterHotRestartOnSave": false,
+    "dart.flutterRunLogFile": null,
+    "dart.flutterSdkPath": null,
+    "dart.debugExternalPackageLibraries": false,
+    "dart.debugSdkLibraries": false,
+    
+    // Mantém a conexão de debug ativa
+    "dart.vmServicePort": 0,
+    
+    // Salva automaticamente antes de hot reload
+    "files.autoSave": "afterDelay",
+    "files.autoSaveDelay": 1000,
+    
+    // Melhora a experiência de debug
+    "debug.inlineValues": true,
+    "debug.showBreakpointsInOverviewRuler": true
+}
+

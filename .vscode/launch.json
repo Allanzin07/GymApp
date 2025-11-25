@@ -7,7 +7,11 @@
         {
             "name": "GymApp",
             "request": "launch",
-            "type": "dart"
+            "type": "dart",
+            "flutterMode": "debug",
+            "args": [
+                "--hot"
+            ]
         },
         {
             "name": "GymApp (profile mode)",
@@ -20,6 +24,11 @@
             "request": "launch",
             "type": "dart",
             "flutterMode": "release"
+        },
+        {
+            "name": "GymApp (attach)",
+            "request": "attach",
+            "type": "dart"
         }
     ]
 }

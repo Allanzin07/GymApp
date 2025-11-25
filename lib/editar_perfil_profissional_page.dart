@@ -6,6 +6,7 @@ import 'package:image_picker/image_picker.dart';
 import 'package:image/image.dart' as img;
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:geolocator/geolocator.dart';
 
 // Ajuste o caminho do import se necessário
 import 'package:gym_app/mixins/upload_mixin.dart';
@@ -42,6 +43,11 @@ class _EditarPerfilProfissionalPageState
 
   bool _isLoading = false;
   bool _isSaving = false;
+  
+  // Localização GPS
+  double? _latitude;
+  double? _longitude;
+  bool _isGettingLocation = false;
 
   String get _profissionalId {
     final user = FirebaseAuth.instance.currentUser;
@@ -74,6 +80,13 @@ class _EditarPerfilProfissionalPageState
         _linkController.text = data['link'] ?? '';
         _fotoPerfilUrlAtual = data['fotoUrl'];
         _fotoCapaUrlAtual = data['capaUrl'];
+        
+        // Carrega localização GPS se existir
+        if (data['localizacaoGPS'] != null) {
+          final gps = data['localizacaoGPS'] as Map<String, dynamic>;
+          _latitude = (gps['lat'] as num?)?.toDouble();
+          _longitude = (gps['lng'] as num?)?.toDouble();
+        }
       }
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -136,6 +149,74 @@ class _EditarPerfilProfissionalPageState
   }
 
   // =========================================================
+  // CAPTURAR LOCALIZAÇÃO GPS
+  // =========================================================
+
+  Future<void> _capturarLocalizacaoGPS() async {
+    setState(() => _isGettingLocation = true);
+
+    try {
+      bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
+      if (!serviceEnabled) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Por favor, ative o GPS nas configurações do dispositivo.'),
+            ),
+          );
+        }
+        setState(() => _isGettingLocation = false);
+        return;
+      }
+
+      LocationPermission permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+      }
+
+      if (permission == LocationPermission.deniedForever || 
+          permission == LocationPermission.denied) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Permissão de localização negada.'),
+            ),
+          );
+        }
+        setState(() => _isGettingLocation = false);
+        return;
+      }
+
+      Position position = await Geolocator.getCurrentPosition(
+        desiredAccuracy: LocationAccuracy.high,
+        timeLimit: const Duration(seconds: 10),
+      );
+
+      setState(() {
+        _latitude = position.latitude;
+        _longitude = position.longitude;
+        _isGettingLocation = false;
+      });
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Localização capturada com sucesso!'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+    } catch (e) {
+      setState(() => _isGettingLocation = false);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Erro ao capturar localização: $e')),
+        );
+      }
+    }
+  }
+
+  // =========================================================
   // SALVAR PERFIL (SUPABASE + MIXIN)
   // =========================================================
 
@@ -162,7 +243,7 @@ class _EditarPerfilProfissionalPageState
         );
       }
 
-      await _firestore.collection('professionals').doc(_profissionalId).set({
+      final updateData = {
         'nome': _nomeController.text.trim(),
         'especialidade': _especialidadeController.text.trim(),
         'descricao': _descricaoController.text.trim(),
@@ -173,7 +254,20 @@ class _EditarPerfilProfissionalPageState
         'fotoUrl': fotoPerfilUrl,
         'capaUrl': fotoCapaUrl,
         'atualizadoEm': FieldValue.serverTimestamp(),
-      }, SetOptions(merge: true));
+      };
+
+      // Adiciona localização GPS se foi capturada
+      if (_latitude != null && _longitude != null) {
+        updateData['localizacaoGPS'] = {
+          'lat': _latitude,
+          'lng': _longitude,
+        };
+      }
+
+      await _firestore.collection('professionals').doc(_profissionalId).set(
+        updateData,
+        SetOptions(merge: true),
+      );
 
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text("Perfil atualizado com sucesso!")),
@@ -310,7 +404,102 @@ class _EditarPerfilProfissionalPageState
                             maxLines: 4),
                         const SizedBox(height: 16),
 
-                        _campo(_localizacaoController, 'Localização'),
+                        _campo(_localizacaoController, 'Localização (Endereço)'),
+                        const SizedBox(height: 12),
+                        
+                        // Botão para capturar localização GPS
+                        Card(
+                          color: Colors.grey.shade100,
+                          child: Padding(
+                            padding: const EdgeInsets.all(12),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  children: [
+                                    const Icon(Icons.location_on, color: Colors.red, size: 20),
+                                    const SizedBox(width: 8),
+                                    const Text(
+                                      'Localização GPS',
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 14,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 8),
+                                if (_latitude != null && _longitude != null)
+                                  Text(
+                                    'Lat: ${_latitude!.toStringAsFixed(6)}, Lng: ${_longitude!.toStringAsFixed(6)}',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: Colors.green.shade700,
+                                    ),
+                                  )
+                                else
+                                  const Text(
+                                    'Nenhuma localização GPS capturada',
+                                    style: TextStyle(
+                                      fontSize: 12,
+                                      color: Colors.grey,
+                                    ),
+                                  ),
+                                const SizedBox(height: 12),
+                                Container(
+                                  padding: const EdgeInsets.all(10),
+                                  decoration: BoxDecoration(
+                                    color: Colors.orange.shade50,
+                                    borderRadius: BorderRadius.circular(8),
+                                    border: Border.all(
+                                      color: Colors.orange.shade200,
+                                      width: 1,
+                                    ),
+                                  ),
+                                  child: Row(
+                                    children: [
+                                      Icon(
+                                        Icons.info_outline,
+                                        size: 18,
+                                        color: Colors.orange.shade700,
+                                      ),
+                                      const SizedBox(width: 8),
+                                      Expanded(
+                                        child: Text(
+                                          'Capture sua localização somente quando estiver no endereço/localização descrito acima para que a busca do cliente funcione corretamente',
+                                          style: TextStyle(
+                                            fontSize: 11,
+                                            color: Colors.orange.shade900,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                const SizedBox(height: 8),
+                                ElevatedButton.icon(
+                                  onPressed: _isGettingLocation ? null : _capturarLocalizacaoGPS,
+                                  icon: _isGettingLocation
+                                      ? const SizedBox(
+                                          width: 16,
+                                          height: 16,
+                                          child: CircularProgressIndicator(
+                                            strokeWidth: 2,
+                                            color: Colors.white,
+                                          ),
+                                        )
+                                      : const Icon(Icons.my_location, size: 18),
+                                  label: Text(_isGettingLocation ? 'Capturando...' : 'Capturar Localização Atual'),
+                                  style: ElevatedButton.styleFrom(
+                                    backgroundColor: Colors.red,
+                                    foregroundColor: Colors.white,
+                                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ),
                         const SizedBox(height: 16),
 
                         const Text(

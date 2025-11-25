@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart' show kIsWeb, debugPrint;
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
@@ -10,6 +10,166 @@ import 'minha_rede_page.dart';
 import 'conversations_page.dart';
 import 'chat_page.dart';
 import 'notifications_button.dart';
+import 'notifications_service.dart';
+import 'chat_service.dart';
+
+/// Widget reutilizável para botão de conexão que verifica status e permite conectar/desconectar
+class _ConnectionButton extends StatelessWidget {
+  final String? currentUserId;
+  final String targetId;
+  final String targetType; // 'profissional' ou 'academia'
+  final VoidCallback onConnect;
+  final VoidCallback onDisconnect;
+  final VoidCallback onChat;
+
+  const _ConnectionButton({
+    required this.currentUserId,
+    required this.targetId,
+    required this.targetType,
+    required this.onConnect,
+    required this.onDisconnect,
+    required this.onChat,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    if (currentUserId == null) {
+      return ElevatedButton.icon(
+        style: ElevatedButton.styleFrom(
+          backgroundColor: Colors.red,
+          foregroundColor: Colors.white,
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
+        ),
+        onPressed: () {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Faça login para se conectar.')),
+          );
+        },
+        icon: const Icon(Icons.link),
+        label: const Text('Conectar-se'),
+      );
+    }
+
+    final _firestore = FirebaseFirestore.instance;
+    
+    return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+      stream: _firestore
+          .collection('connections')
+          .where('usuarioId', isEqualTo: currentUserId)
+          .where(targetType == 'profissional' ? 'profissionalId' : 'academiaId', isEqualTo: targetId)
+          .limit(1)
+          .snapshots(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const SizedBox(
+            width: 20,
+            height: 20,
+            child: CircularProgressIndicator(strokeWidth: 2),
+          );
+        }
+
+        final docs = snapshot.data?.docs ?? [];
+        String? connectionStatus;
+
+        if (docs.isNotEmpty) {
+          final data = docs.first.data();
+          connectionStatus = data['status'] as String? ?? 'pending';
+        }
+
+        return Wrap(
+          spacing: 12,
+          runSpacing: 8,
+          children: [
+            if (connectionStatus == null)
+              // Não conectado - mostra botão conectar
+              ElevatedButton.icon(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.red,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+                onPressed: onConnect,
+                icon: const Icon(Icons.link),
+                label: const Text('Conectar-se'),
+              )
+            else if (connectionStatus == 'active')
+              // Conectado - mostra botão desconectar
+              ElevatedButton.icon(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.green,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+                onPressed: onDisconnect,
+                icon: const Icon(Icons.check_circle),
+                label: const Text('Conectado'),
+              )
+            else if (connectionStatus == 'pending')
+              // Aguardando aprovação
+              ElevatedButton.icon(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.orange,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+                onPressed: () {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('Aguardando aprovação...'),
+                      backgroundColor: Colors.orange,
+                    ),
+                  );
+                },
+                icon: const Icon(Icons.hourglass_empty),
+                label: const Text('Aguardando'),
+              )
+              else
+              // Outro status (rejected, etc) - permite conectar novamente
+              ElevatedButton.icon(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.red,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                ),
+                onPressed: onConnect,
+                icon: const Icon(Icons.link),
+                label: const Text('Conectar-se'),
+              ),
+            // Botão de chat sempre visível (permite diálogo antes de conectar)
+            OutlinedButton.icon(
+              style: OutlinedButton.styleFrom(
+                foregroundColor: Colors.red.shade700,
+                side: BorderSide(color: Colors.red.shade300, width: 1.5),
+                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+              ),
+              onPressed: onChat,
+              icon: const Icon(Icons.chat_bubble_outline),
+              label: const Text('Enviar Mensagem'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+}
 
 class HomeAcademiaPage extends StatefulWidget {
   final String? academiaId;
@@ -73,6 +233,30 @@ class _HomeAcademiaPageState extends State<HomeAcademiaPage> {
         'vinculadoEm': FieldValue.serverTimestamp(),
       });
 
+      // ✅ Cria notificação para a academia
+      try {
+        final notificationsService = NotificationsService();
+        final chatService = ChatService();
+        final userProfile = await chatService.fetchProfile(currentUser.uid);
+        final userName = userProfile['nome'] as String? ??
+                        userProfile['name'] as String? ??
+                        'Usuário';
+
+        await notificationsService.createNotification(
+          senderId: currentUser.uid,
+          receiverId: _academiaId,
+          type: 'connection_request',
+          title: '$userName te enviou uma solicitação de conexão',
+          message: 'Clique para ver e responder à solicitação',
+          data: {
+            'connectionType': 'usuario_to_academia',
+            'usuarioId': currentUser.uid,
+          },
+        );
+      } catch (e) {
+        debugPrint('Erro ao criar notificação de conexão: $e');
+      }
+
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Solicitação registrada! Verifique sua rede.')),
@@ -87,6 +271,60 @@ class _HomeAcademiaPageState extends State<HomeAcademiaPage> {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('Não foi possível conectar: $e')),
       );
+    }
+  }
+
+  /// Desconecta da academia
+  Future<void> _disconnectFromAcademia() async {
+    final currentUser = _auth.currentUser;
+    if (currentUser == null) return;
+
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Desconectar'),
+        content: const Text('Deseja realmente desconectar desta academia?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancelar'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+            child: const Text('Desconectar'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm != true) return;
+
+    try {
+      final connectionsRef = _firestore.collection('connections');
+      final existing = await connectionsRef
+          .where('usuarioId', isEqualTo: currentUser.uid)
+          .where('academiaId', isEqualTo: _academiaId)
+          .limit(1)
+          .get();
+
+      if (existing.docs.isNotEmpty) {
+        await existing.docs.first.reference.delete();
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Desconectado com sucesso!'),
+              backgroundColor: Colors.green,
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Erro ao desconectar: $e')),
+        );
+      }
     }
   }
 
@@ -349,40 +587,16 @@ class _HomeAcademiaPageState extends State<HomeAcademiaPage> {
                         ),
                       const SizedBox(height: 16),
                       if (!_isOwner) ...[
-                        Wrap(
-                          spacing: 12,
-                          runSpacing: 8,
-                          children: [
-                            ElevatedButton.icon(
-                              style: ElevatedButton.styleFrom(
-                                backgroundColor: Colors.red,
-                                foregroundColor: Colors.white,
-                                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(12),
-                                ),
-                              ),
-                              onPressed: _connectWithAcademia,
-                              icon: const Icon(Icons.link),
-                              label: const Text('Conectar-se'),
-                            ),
-                            OutlinedButton.icon(
-                              style: OutlinedButton.styleFrom(
-                                foregroundColor: Colors.red.shade700,
-                                side: BorderSide(color: Colors.red.shade300, width: 1.5),
-                                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
-                                shape: RoundedRectangleBorder(
-                                  borderRadius: BorderRadius.circular(12),
-                                ),
-                              ),
-                              onPressed: () => _openChat(
-                                participantName: nome,
-                                participantPhotoUrl: fotoPerfilUrl,
-                              ),
-                              icon: const Icon(Icons.chat_bubble_outline),
-                              label: const Text('Enviar Mensagem'),
-                            ),
-                          ],
+                        _ConnectionButton(
+                          currentUserId: _auth.currentUser?.uid,
+                          targetId: _academiaId,
+                          targetType: 'academia',
+                          onConnect: _connectWithAcademia,
+                          onDisconnect: _disconnectFromAcademia,
+                          onChat: () => _openChat(
+                            participantName: nome,
+                            participantPhotoUrl: fotoPerfilUrl,
+                          ),
                         ),
                         const SizedBox(height: 16),
                       ],

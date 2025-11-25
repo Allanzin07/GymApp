@@ -8,6 +8,8 @@ import 'notifications_service.dart';
 import 'chat_page.dart';
 import 'conversations_page.dart';
 import 'minha_rede_page.dart';
+import 'my_nutrition_page.dart';
+import 'workouts_assigned_page.dart';
 
 class NotificationsPanel extends StatefulWidget {
   final String? currentUserId;
@@ -26,8 +28,15 @@ class _NotificationsPanelState extends State<NotificationsPanel> {
     switch (type) {
       case 'message':
         return Icons.chat_bubble;
-      case 'connection':
+      case 'connection_request':
         return Icons.person_add;
+      case 'connection_accept':
+        return Icons.check_circle;
+      case 'workout_assigned':
+        return Icons.fitness_center;
+      case 'nutrition_plan_assigned':
+      case 'nutrition_plan_updated':
+        return Icons.restaurant_menu;
       case 'system':
       default:
         return Icons.notifications;
@@ -76,9 +85,27 @@ class _NotificationsPanelState extends State<NotificationsPanel> {
       return;
     }
 
-    if (type == 'connection') {
+    if (type == 'connection_request' || type == 'connection_accept') {
       // Abre página MinhaRede para gerenciar solicitações
       Navigator.push(context, MaterialPageRoute(builder: (_) => const MinhaRedePage()));
+      return;
+    }
+
+    if (type == 'workout_assigned') {
+      Navigator.pop(context);
+      Navigator.push(
+        context,
+        MaterialPageRoute(builder: (_) => const WorkoutsAssignedPage()),
+      );
+      return;
+    }
+
+    if (type == 'nutrition_plan_assigned' || type == 'nutrition_plan_updated') {
+      Navigator.pop(context);
+      Navigator.push(
+        context,
+        MaterialPageRoute(builder: (_) => const MyNutritionPage()),
+      );
       return;
     }
 
@@ -125,21 +152,29 @@ class _NotificationsPanelState extends State<NotificationsPanel> {
                   return const Center(child: CircularProgressIndicator(color: Colors.red));
                 }
                 final docs = snapshot.data?.docs ?? [];
-                if (docs.isEmpty) {
+                
+                // Ordena client-side por data (mais recente primeiro)
+                final sortedDocs = [...docs]..sort((a, b) {
+                  final aTime = (a.data()['createdAt'] as Timestamp?)?.millisecondsSinceEpoch ?? 0;
+                  final bTime = (b.data()['createdAt'] as Timestamp?)?.millisecondsSinceEpoch ?? 0;
+                  return bTime.compareTo(aTime); // Descending
+                });
+
+                if (sortedDocs.isEmpty) {
                   return Center(child: Text('Sem notificações', style: TextStyle(color: Colors.grey[600])));
                 }
 
                 return ListView.separated(
                   padding: const EdgeInsets.symmetric(vertical: 8),
                   separatorBuilder: (_, __) => Divider(height: 0, color: Colors.grey.shade200),
-                  itemCount: docs.length,
+                  itemCount: sortedDocs.length,
                   itemBuilder: (context, index) {
-                    final doc = docs[index];
-                    final d = doc.data()!;
-                    final isRead = d['isRead'] as bool? ?? false;
-                    final type = d['type'] as String? ?? 'system';
-                    final title = d['title'] as String? ?? '';
-                    final body = d['body'] as String? ?? '';
+                    final doc = sortedDocs[index];
+                    final d = doc.data();
+                    final isRead = (d['isRead'] as bool?) ?? false;
+                    final type = (d['type'] as String?) ?? 'system';
+                    final title = (d['title'] as String?) ?? '';
+                    final body = (d['message'] as String?) ?? (d['body'] as String?) ?? ''; // Usa 'message' primeiro, fallback para 'body'
                     final created = (d['createdAt'] as Timestamp?)?.toDate();
 
                     return ListTile(

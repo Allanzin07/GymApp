@@ -1,7 +1,7 @@
 pluginManagement {
     def flutterSdkPath = {
         def properties = new Properties()
-        def file = new File(settingsDir, "local.properties")
+        def file = new File(settingsDir, "../local.properties")
         if (file.exists()) {
             file.withReader("UTF-8") { reader -> properties.load(reader) }
             return properties.getProperty("flutter.sdk")
@@ -10,7 +10,7 @@ pluginManagement {
     }.call()
 
     if (flutterSdkPath == null) {
-        throw new Exception("Flutter SDK not found. Define flutter.sdk in local.properties.")
+        throw new GradleException("Flutter SDK not found. Define flutter.sdk in local.properties.")
     }
 
     includeBuild("$flutterSdkPath/packages/flutter_tools/gradle")

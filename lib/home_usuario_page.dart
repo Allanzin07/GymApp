@@ -1,4 +1,6 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'login_page.dart';
@@ -12,6 +14,8 @@ import 'notifications_button.dart';
 import 'editar_perfil_usuario_page.dart';
 import 'pages/mapa_page.dart';
 import 'package:geolocator/geolocator.dart';
+import 'connected_posts_feed.dart';
+import 'user_fitness_selection_page.dart';
 
 class HomeUsuarioPage extends StatefulWidget {
   final bool guestMode;
@@ -35,8 +39,8 @@ class _HomeUsuarioPageState extends State<HomeUsuarioPage> {
   String? _selectedType;
   double _maxDistance = 10.0;
   double _minRating = 0.0;
-  double? _maxPrice;
   Position? _userPosition;
+  StreamSubscription<Position>? _locationSubscription;
 
   double calcularDistanciaEmKm(
     double lat1,
@@ -56,41 +60,144 @@ class _HomeUsuarioPageState extends State<HomeUsuarioPage> {
   }
 
   Future<void> _getUserLocation() async {
-    bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
-    if (!serviceEnabled) return;
+    try {
+      bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
+      if (!serviceEnabled) {
+        if (mounted) _loadAds();
+        return;
+      }
 
-    LocationPermission permission = await Geolocator.checkPermission();
-    if (permission == LocationPermission.denied) {
-      permission = await Geolocator.requestPermission();
+      LocationPermission permission = await Geolocator.checkPermission();
+      if (permission == LocationPermission.denied) {
+        permission = await Geolocator.requestPermission();
+      }
+
+      if (permission == LocationPermission.deniedForever || 
+          permission == LocationPermission.denied) {
+        if (mounted) _loadAds();
+        return;
+      }
+
+      // Adiciona timeout para evitar travamento
+      try {
+        _userPosition = await Geolocator.getCurrentPosition(
+          desiredAccuracy: LocationAccuracy.medium, // Reduzido de high para medium para ser mais rápido
+          timeLimit: const Duration(seconds: 10), // Timeout de 10 segundos
+        );
+      } on TimeoutException {
+        // Em caso de timeout, continua sem localização
+        _userPosition = null;
+        debugPrint('Timeout ao obter localização');
+      }
+    } catch (e) {
+      // Ignora erros de localização e continua carregando os anúncios
+      debugPrint('Erro ao obter localização: $e');
+    } finally {
+      // Garante que os anúncios sejam carregados mesmo se a localização falhar
+      if (mounted) {
+        _loadAds();
+      }
     }
-
-    if (permission == LocationPermission.deniedForever) return;
-
-    _userPosition = await Geolocator.getCurrentPosition(
-      desiredAccuracy: LocationAccuracy.high,
-    );
   }
 
   @override
   void initState() {
     super.initState();
-    _getUserLocation().then((_) {
-      _loadAds();
+    // Carrega localização de forma assíncrona sem bloquear a UI
+    _getUserLocation();
+    // Inicia stream de localização em tempo real
+    _startLocationStream();
+  }
+
+  @override
+  void dispose() {
+    _locationSubscription?.cancel();
+    super.dispose();
+  }
+
+  /// Inicia stream de localização em tempo real
+  void _startLocationStream() {
+    _locationSubscription = Geolocator.getPositionStream(
+      locationSettings: const LocationSettings(
+        accuracy: LocationAccuracy.medium,
+        distanceFilter: 100, // Atualiza a cada 100 metros
+      ),
+    ).listen(
+      (Position position) {
+        if (mounted) {
+          setState(() {
+            _userPosition = position;
+          });
+          // Recalcula distâncias quando a localização muda
+          _recalculateDistances();
+        }
+      },
+      onError: (error) {
+        debugPrint('Erro no stream de localização: $error');
+      },
+    );
+  }
+
+  /// Recalcula distâncias de todos os anúncios
+  void _recalculateDistances() {
+    if (_userPosition == null) return;
+
+    setState(() {
+      _allAds = _allAds.map((ad) {
+        if (ad.latitude != null && ad.longitude != null) {
+          final distanceKm = calcularDistanciaEmKm(
+            _userPosition!.latitude,
+            _userPosition!.longitude,
+            ad.latitude!,
+            ad.longitude!,
+          );
+          // Cria novo GymAd com distância atualizada
+          return GymAd(
+            id: ad.id,
+            gymName: ad.gymName,
+            title: ad.title,
+            imageUrl: ad.imageUrl,
+            distance: '${distanceKm.toStringAsFixed(1)} km',
+            rating: ad.rating,
+            type: ad.type,
+            calculatedDistanceKm: distanceKm,
+            latitude: ad.latitude,
+            longitude: ad.longitude,
+          );
+        }
+        return ad;
+      }).toList();
     });
   }
 
 
   Future<void> _loadAds() async {
+    if (!mounted) return;
+    
     setState(() {
       _isLoadingAds = true;
       _loadError = null;
     });
 
     try {
+      // Adiciona timeout para evitar travamento
       final results = await Future.wait([
-        _firestore.collection('academias').get(),
-        _firestore.collection('professionals').get(),
-      ]);
+        _firestore.collection('academias').get().timeout(
+          const Duration(seconds: 15),
+          onTimeout: () => _firestore.collection('academias').limit(0).get(),
+        ),
+        _firestore.collection('professionals').get().timeout(
+          const Duration(seconds: 15),
+          onTimeout: () => _firestore.collection('professionals').limit(0).get(),
+        ),
+      ]).timeout(
+        const Duration(seconds: 20),
+        onTimeout: () {
+          throw TimeoutException('Tempo limite excedido ao carregar anúncios');
+        },
+      );
+
+      if (!mounted) return;
 
       final academiasSnapshot = results[0];
       final profissionaisSnapshot = results[1];
@@ -102,8 +209,37 @@ class _HomeUsuarioPageState extends State<HomeUsuarioPage> {
         final fotoPerfil = data['fotoPerfilUrl'] as String? ??
             data['fotoUrl'] as String? ??
             'https://images.unsplash.com/photo-1517836357463-d25dfeac3438?w=1200';
-        final distancia = data['distancia']?.toString() ?? data['distance']?.toString() ?? '0 km';
         final avaliacao = _parseRating(data['avaliacao'] ?? data['rating']);
+        
+        // Busca localização GPS
+        double? lat;
+        double? lng;
+        double? calculatedDistanceKm;
+        String distancia = 'Distância não disponível';
+        
+        if (data['localizacaoGPS'] != null) {
+          final gps = data['localizacaoGPS'] as Map<String, dynamic>;
+          lat = (gps['lat'] as num?)?.toDouble();
+          lng = (gps['lng'] as num?)?.toDouble();
+          
+          // Calcula distância se tiver localização do usuário
+          if (lat != null && lng != null && _userPosition != null) {
+            calculatedDistanceKm = calcularDistanciaEmKm(
+              _userPosition!.latitude,
+              _userPosition!.longitude,
+              lat,
+              lng,
+            );
+            distancia = '${calculatedDistanceKm.toStringAsFixed(1)} km';
+          } else if (lat != null && lng != null) {
+            distancia = 'Localização GPS disponível';
+          }
+        } else {
+          // Se não tem GPS, usa o campo de texto antigo
+          distancia = data['distancia']?.toString() ?? 
+                     data['distance']?.toString() ?? 
+                     'Localização não informada';
+        }
 
         return GymAd(
           id: doc.id,
@@ -113,6 +249,9 @@ class _HomeUsuarioPageState extends State<HomeUsuarioPage> {
           distance: distancia,
           rating: avaliacao,
           type: 'Academia',
+          calculatedDistanceKm: calculatedDistanceKm,
+          latitude: lat,
+          longitude: lng,
         );
       });
 
@@ -124,8 +263,37 @@ class _HomeUsuarioPageState extends State<HomeUsuarioPage> {
             'Conheça meu trabalho e resultados.';
         final fotoPerfil = data['fotoUrl'] as String? ??
             'https://cdn-icons-png.flaticon.com/512/149/149071.png';
-        final distancia = data['distancia']?.toString() ?? data['distance']?.toString() ?? '0 km';
         final avaliacao = _parseRating(data['avaliacao'] ?? data['rating']);
+        
+        // Busca localização GPS
+        double? lat;
+        double? lng;
+        double? calculatedDistanceKm;
+        String distancia = 'Distância não disponível';
+        
+        if (data['localizacaoGPS'] != null) {
+          final gps = data['localizacaoGPS'] as Map<String, dynamic>;
+          lat = (gps['lat'] as num?)?.toDouble();
+          lng = (gps['lng'] as num?)?.toDouble();
+          
+          // Calcula distância se tiver localização do usuário
+          if (lat != null && lng != null && _userPosition != null) {
+            calculatedDistanceKm = calcularDistanciaEmKm(
+              _userPosition!.latitude,
+              _userPosition!.longitude,
+              lat,
+              lng,
+            );
+            distancia = '${calculatedDistanceKm.toStringAsFixed(1)} km';
+          } else if (lat != null && lng != null) {
+            distancia = 'Localização GPS disponível';
+          }
+        } else {
+          // Se não tem GPS, usa o campo de texto antigo
+          distancia = data['distancia']?.toString() ?? 
+                     data['distance']?.toString() ?? 
+                     'Localização não informada';
+        }
 
         return GymAd(
           id: doc.id,
@@ -135,16 +303,24 @@ class _HomeUsuarioPageState extends State<HomeUsuarioPage> {
           distance: distancia,
           rating: avaliacao,
           type: 'Profissional',
+          calculatedDistanceKm: calculatedDistanceKm,
+          latitude: lat,
+          longitude: lng,
         );
       });
 
+      if (!mounted) return;
+      
       setState(() {
         _allAds = [...academias, ...profissionais];
         _isLoadingAds = false;
       });
     } catch (e) {
+      debugPrint('Erro ao carregar anúncios: $e');
+      if (!mounted) return;
+      
       setState(() {
-        _loadError = 'Erro ao carregar cadastros: $e';
+        _loadError = 'Erro ao carregar cadastros. Tente novamente.';
         _isLoadingAds = false;
       });
     }
@@ -183,6 +359,7 @@ class _HomeUsuarioPageState extends State<HomeUsuarioPage> {
 
   List<GymAd> _filterAds(List<GymAd> ads) {
     return ads.where((ad) {
+      // Filtro de busca por texto
       if (_searchText.isNotEmpty) {
         final searchLower = _searchText.toLowerCase();
         final matchesName = ad.gymName.toLowerCase().contains(searchLower);
@@ -190,17 +367,38 @@ class _HomeUsuarioPageState extends State<HomeUsuarioPage> {
         if (!matchesName && !matchesTitle) return false;
       }
 
+      // Filtro por tipo
       if (_selectedType != null && ad.type != _selectedType) {
         return false;
       }
 
-      final distanceInKm = _parseDistance(ad.distance);
+      // Filtro por distância - usa distância calculada se disponível
+      double distanceInKm;
+      if (ad.calculatedDistanceKm != null) {
+        // Usa distância calculada em tempo real
+        distanceInKm = ad.calculatedDistanceKm!;
+      } else if (ad.latitude != null && ad.longitude != null && _userPosition != null) {
+        // Calcula distância agora se tiver coordenadas
+        distanceInKm = calcularDistanciaEmKm(
+          _userPosition!.latitude,
+          _userPosition!.longitude,
+          ad.latitude!,
+          ad.longitude!,
+        );
+      } else {
+        // Se não tem GPS, tenta parsear do texto (compatibilidade com dados antigos)
+        distanceInKm = _parseDistance(ad.distance);
+      }
+      
+      // Se o filtro de distância está ativo e não tem localização GPS, não mostra
+      if (_maxDistance < 10.0 && ad.latitude == null && ad.longitude == null) {
+        return false; // Não mostra academias/profissionais sem GPS quando filtro está ativo
+      }
+      
       if (distanceInKm > _maxDistance) return false;
 
+      // Filtro por avaliação
       if (ad.rating < _minRating) return false;
-
-      // Filtro por preço (será implementado quando o campo price for adicionado ao GymAd)
-      // if (_maxPrice != null && ad.price > _maxPrice!) return false;
 
       return true;
     }).toList();
@@ -212,7 +410,6 @@ class _HomeUsuarioPageState extends State<HomeUsuarioPage> {
       _selectedType = null;
       _maxDistance = 10.0;
       _minRating = 0.0;
-      _maxPrice = null;
     });
   }
 
@@ -388,7 +585,24 @@ class _HomeUsuarioPageState extends State<HomeUsuarioPage> {
                   builder: (_) => MapaPage(),
                 ),
               );
-            }),      
+            }),
+            _buildDrawerItem('Área Fitness', Icons.fitness_center, () {
+              Navigator.pop(context);
+              if (widget.guestMode) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('Crie uma conta para acessar sua área fitness.'),
+                  ),
+                );
+                return;
+              }
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => const UserFitnessSelectionPage(),
+                ),
+              );
+            }),
           ],
         ),
       ),
@@ -601,60 +815,8 @@ class _HomeUsuarioPageState extends State<HomeUsuarioPage> {
                   ],
                 ),
                 const SizedBox(height: 16),
-                // Filtro por Valor
-                const Text(
-                  'Valor máximo',
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.w600,
-                    color: Colors.black87,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Wrap(
-                  spacing: 8,
-                  children: [
-                    _buildFilterChip(
-                      label: 'Até R\$ 50',
-                      selected: _maxPrice == 50.0,
-                      onSelected: (selected) {
-                        setState(() {
-                          _maxPrice = selected ? 50.0 : null;
-                        });
-                      },
-                    ),
-                    _buildFilterChip(
-                      label: 'Até R\$ 100',
-                      selected: _maxPrice == 100.0,
-                      onSelected: (selected) {
-                        setState(() {
-                          _maxPrice = selected ? 100.0 : null;
-                        });
-                      },
-                    ),
-                    _buildFilterChip(
-                      label: 'Até R\$ 200',
-                      selected: _maxPrice == 200.0,
-                      onSelected: (selected) {
-                        setState(() {
-                          _maxPrice = selected ? 200.0 : null;
-                        });
-                      },
-                    ),
-                    _buildFilterChip(
-                      label: 'Sem limite',
-                      selected: _maxPrice == null,
-                      onSelected: (selected) {
-                        setState(() {
-                          _maxPrice = null;
-                        });
-                      },
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 16),
                 // Botão limpar filtros
-                if (_selectedType != null || _minRating > 0 || _maxPrice != null || _maxDistance < 10.0)
+                if (_selectedType != null || _minRating > 0 || _maxDistance < 10.0)
                   Center(
                     child: TextButton.icon(
                       onPressed: _clearFilters,
@@ -668,6 +830,11 @@ class _HomeUsuarioPageState extends State<HomeUsuarioPage> {
               ],
             ),
           ),
+          // Feed de posts de conexões
+          if (!widget.guestMode)
+            ConnectedPostsFeed(
+              currentUserId: FirebaseAuth.instance.currentUser?.uid,
+            ),
         ],
       ),
     );

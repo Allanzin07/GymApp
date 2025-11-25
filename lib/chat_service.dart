@@ -2,10 +2,12 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
+import 'notifications_service.dart';
 
 class ChatService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
+  final NotificationsService _notificationsService = NotificationsService();
 
   final Map<String, Map<String, dynamic>> _profileCache = {};
 
@@ -75,6 +77,29 @@ class ChatService {
       'unreadBy': FieldValue.arrayUnion([receiverId]),
       'unreadCount.$receiverId': FieldValue.increment(1),
     });
+
+    // ✅ Cria notificação para o destinatário
+    try {
+      final senderProfile = await fetchProfile(senderId);
+      final senderName = senderProfile['nome'] as String? ?? 'Usuário';
+      final senderPhotoUrl = senderProfile['fotoUrl'] as String?;
+
+      await _notificationsService.createNotification(
+        senderId: senderId,
+        receiverId: receiverId,
+        type: 'message',
+        title: senderName,
+        message: '$senderName te enviou uma mensagem: "${messageData['text']}"',
+        data: {
+          'conversationId': conversationId,
+          'otherUserId': senderId,
+          'otherUserName': senderName,
+          'otherUserPhoto': senderPhotoUrl,
+        },
+      );
+    } catch (e) {
+      debugPrint('Erro ao criar notificação de mensagem: $e');
+    }
   }
 
   /// MARCA COMO LIDA SOMENTE SE O USUÁRIO REALMENTE FOR DESTINATÁRIO

@@ -121,6 +121,83 @@ service cloud.firestore {
       allow update, delete: if isOwner(userId);
     }
 
+    // ---------------------------------------------------------
+    // Treinos (workouts)
+    // Permite que profissionais criem seus próprios treinos
+    // Permite leitura para usuários autenticados (para ver treinos atribuídos)
+    // Nota: Profissionais também estão na coleção users com userType: 'profissional'
+    // ---------------------------------------------------------
+    match /treinos/{treinoId} {
+      // Criação: qualquer usuário autenticado pode criar treinos
+      allow create: if isSignedIn();
+      
+      // Leitura: qualquer usuário autenticado pode ler (acesso controlado via treinos_atribuidos)
+      allow read: if isSignedIn();
+      
+      // Atualização/Exclusão: apenas o profissional que criou o treino
+      allow update, delete: if isSignedIn()
+        && resource.data.profissionalId == request.auth.uid;
+    }
+
+    // ---------------------------------------------------------
+    // Treinos Atribuídos (workout assignments)
+    // Estrutura: workoutId, clienteId, profissionalId, atribuidoEm, status
+    // Nota: Profissionais também estão na coleção users com userType: 'profissional'
+    // e o uid deles é o mesmo que o profissionalId
+    // ---------------------------------------------------------
+    match /treinos_atribuidos/{atribuicaoId} {
+      // Criação: qualquer usuário autenticado pode criar atribuições
+      // Simplificado para permitir qualquer criação autenticada
+      allow create: if isSignedIn();
+      
+      // Leitura: 
+      // - Profissionais podem ler treinos que eles atribuíram (para verificar duplicatas)
+      // - Clientes podem ler treinos atribuídos a eles
+      // Permite leitura se o usuário for o profissional OU o cliente
+      allow read: if isSignedIn() && (
+        resource.data.profissionalId == request.auth.uid ||
+        resource.data.clienteId == request.auth.uid
+      );
+      
+      // Permite queries para verificar duplicatas antes de criar
+      // Profissionais podem fazer queries onde workoutId e clienteId são especificados
+      allow list: if isSignedIn();
+      
+      // Atualização: apenas o profissional que atribuiu pode atualizar
+      // (ex: mudar status)
+      allow update: if isSignedIn()
+        && resource.data.profissionalId == request.auth.uid;
+      
+      // Exclusão: apenas o profissional que atribuiu pode deletar
+      allow delete: if isSignedIn()
+        && resource.data.profissionalId == request.auth.uid;
+    }
+
+    // ---------------------------------------------------------
+    // Planos Nutricionais (nutrition plans)
+    // Estrutura: createdBy, studentUid, title, objective, observations, days, status
+    // ---------------------------------------------------------
+    match /nutrition_plans/{planId} {
+      // Criação: qualquer usuário autenticado pode criar planos
+      allow create: if isSignedIn();
+      
+      // Leitura: 
+      // - Nutricionistas podem ler planos que criaram
+      // - Alunos podem ler planos atribuídos a eles
+      allow read: if isSignedIn() && (
+        resource.data.createdBy == request.auth.uid ||
+        resource.data.studentUid == request.auth.uid
+      );
+      
+      // Atualização: apenas o nutricionista que criou pode atualizar
+      allow update: if isSignedIn()
+        && resource.data.createdBy == request.auth.uid;
+      
+      // Exclusão: apenas o nutricionista que criou pode deletar
+      allow delete: if isSignedIn()
+        && resource.data.createdBy == request.auth.uid;
+    }
+
     // Demais caminhos negados por padrão
     match /{document=**} {
       allow read, write: if false;

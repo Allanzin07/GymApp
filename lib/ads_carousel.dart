@@ -10,6 +10,9 @@ class GymAd {
   final String distance;
   final double rating;
   final String type; // 'Academia' ou 'Profissional'
+  final double? calculatedDistanceKm; // Distância calculada em KM (null se não calculada)
+  final double? latitude; // Latitude da academia/profissional
+  final double? longitude; // Longitude da academia/profissional
 
   GymAd({
     required this.id,
@@ -19,6 +22,9 @@ class GymAd {
     required this.distance,
     required this.rating,
     this.type = 'Academia',
+    this.calculatedDistanceKm,
+    this.latitude,
+    this.longitude,
   });
 }
 

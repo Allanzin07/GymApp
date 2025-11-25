@@ -1,6 +1,8 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart' show debugPrint;
+import 'notifications_service.dart';
 
 /// Página que exibe a rede de conexões do usuário logado.
 /// Se adapta automaticamente para alunos, profissionais e academias.
@@ -708,6 +710,39 @@ class _MinhaRedePageState extends State<MinhaRedePage> {
       }
       
       await data.connectionDoc.reference.update(updateData);
+
+      // ✅ Cria notificação de conexão aceita
+      final connection = data.connectionDoc.data() ?? {};
+      final usuarioId = connection['usuarioId'] as String?;
+      if (usuarioId != null && _userId != null) {
+        try {
+          Map<String, dynamic>? accepterProfile;
+          if (_userType == 'academia') {
+            accepterProfile = (await _firestore.collection('academias').doc(_userId).get()).data();
+          } else if (_userType == 'profissional') {
+            accepterProfile = (await _firestore.collection('professionals').doc(_userId).get()).data();
+          }
+
+          final accepterName = accepterProfile?['nome'] as String? ??
+                               accepterProfile?['name'] as String? ??
+                               (_userType == 'academia' ? 'Academia' : 'Profissional');
+
+          final notificationsService = NotificationsService();
+          await notificationsService.createNotification(
+            senderId: _userId!,
+            receiverId: usuarioId,
+            type: 'connection_accept',
+            title: '$accepterName aceitou sua solicitação de conexão',
+            message: 'Vocês agora estão conectados!',
+            data: {
+              'connectionType': _userType == 'academia' ? 'academia_to_usuario' : 'profissional_to_usuario',
+            },
+          );
+        } catch (e) {
+          debugPrint('Erro ao criar notificação de conexão aceita: $e');
+        }
+      }
+
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(

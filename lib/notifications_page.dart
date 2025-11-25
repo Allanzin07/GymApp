@@ -1,7 +1,11 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart' show kIsWeb, debugPrint;
 import 'package:flutter/material.dart';
+import 'chat_page.dart';
+import 'minha_rede_page.dart';
+import 'workouts_assigned_page.dart';
+import 'my_nutrition_page.dart';
 
 class NotificationsPage extends StatefulWidget {
   final bool asDialog; // se estiver abrindo como modal lateral
@@ -28,10 +32,11 @@ class _NotificationsPageState extends State<NotificationsPage> {
       );
     }
 
+    // Usa o serviço de notificações que já tem orderBy configurado
+    // ou faz query sem orderBy e ordena no cliente
     final notificationsStream = _firestore
         .collection('notifications')
         .where('receiverId', isEqualTo: _currentUserId)
-        .orderBy('createdAt', descending: true)
         .snapshots();
 
     return _buildScaffold(
@@ -48,7 +53,23 @@ class _NotificationsPageState extends State<NotificationsPage> {
           }
 
           final docs = snapshot.data?.docs ?? [];
-          if (docs.isEmpty) {
+          
+          debugPrint('Notificações encontradas: ${docs.length}');
+          for (var doc in docs) {
+            final data = doc.data();
+            debugPrint('Notificação: type=${data['type']}, title=${data['title']}, receiverId=${data['receiverId']}, createdAt=${data['createdAt']}');
+          }
+          
+          // Ordena client-side por data (mais recente primeiro)
+          final sortedDocs = [...docs]..sort((a, b) {
+            final aTime = (a.data()['createdAt'] as Timestamp?)?.millisecondsSinceEpoch ?? 0;
+            final bTime = (b.data()['createdAt'] as Timestamp?)?.millisecondsSinceEpoch ?? 0;
+            return bTime.compareTo(aTime); // Descending
+          });
+
+          debugPrint('Notificações ordenadas: ${sortedDocs.length}');
+
+          if (sortedDocs.isEmpty) {
             return Center(
               child: Padding(
                 padding: const EdgeInsets.all(24),
@@ -63,42 +84,59 @@ class _NotificationsPageState extends State<NotificationsPage> {
           }
 
           return ListView.separated(
-            itemCount: docs.length,
+            itemCount: sortedDocs.length,
             separatorBuilder: (_, __) =>
                 Divider(height: 0, color: Colors.red.shade50),
             itemBuilder: (context, index) {
-              final data = docs[index].data();
+              final data = sortedDocs[index].data();
               final type = data['type'] as String? ?? 'geral';
-              final message = data['message'] as String? ?? 'Notificação';
-              final senderName = data['senderName'] as String? ?? 'Usuário';
+              final title = data['title'] as String? ?? 'Notificação';
+              final message = data['message'] as String? ?? '';
+              final isRead = data['isRead'] as bool? ?? false;
               final createdAt = data['createdAt'] as Timestamp?;
 
               return ListTile(
-                tileColor: Colors.white,
+                tileColor: isRead ? Colors.white : Colors.red.shade50,
                 leading: CircleAvatar(
                   backgroundColor: Colors.red.shade100,
                   child: _iconForType(type),
                 ),
                 title: Text(
-                  senderName,
+                  title,
                   style: theme.textTheme.bodyLarge?.copyWith(
-                    fontWeight: FontWeight.w600,
+                    fontWeight: isRead ? FontWeight.w500 : FontWeight.w600,
                     color: Colors.black87,
                   ),
                 ),
-                subtitle: Text(
+                subtitle: message.isNotEmpty ? Text(
                   message,
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                   style: theme.textTheme.bodyMedium
                       ?.copyWith(color: Colors.grey.shade700),
+                ) : null,
+                trailing: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Text(
+                      _formatTimestamp(createdAt),
+                      style: theme.textTheme.bodySmall
+                          ?.copyWith(color: theme.hintColor),
+                    ),
+                    if (!isRead) ...[
+                      const SizedBox(height: 4),
+                      Container(
+                        width: 8,
+                        height: 8,
+                        decoration: const BoxDecoration(
+                          color: Colors.red,
+                          shape: BoxShape.circle,
+                        ),
+                      ),
+                    ],
+                  ],
                 ),
-                trailing: Text(
-                  _formatTimestamp(createdAt),
-                  style: theme.textTheme.bodySmall
-                      ?.copyWith(color: theme.hintColor),
-                ),
-                onTap: () => _handleNotificationTap(type, data),
+                onTap: () => _handleNotificationTap(type, data, sortedDocs[index].id),
               );
             },
           );
@@ -160,6 +198,11 @@ class _NotificationsPageState extends State<NotificationsPage> {
         return const Icon(Icons.person_add, color: Colors.red);
       case 'connection_accept':
         return const Icon(Icons.check_circle, color: Colors.red);
+      case 'workout_assigned':
+        return const Icon(Icons.fitness_center, color: Colors.red);
+      case 'nutrition_plan_assigned':
+      case 'nutrition_plan_updated':
+        return const Icon(Icons.restaurant_menu, color: Colors.orange);
       case 'update':
         return const Icon(Icons.campaign, color: Colors.red);
       default:
@@ -181,23 +224,72 @@ class _NotificationsPageState extends State<NotificationsPage> {
     return '${date.day}/${date.month}/${date.year}';
   }
 
-  void _handleNotificationTap(String type, Map<String, dynamic> data) {
+  void _handleNotificationTap(String type, Map<String, dynamic> data, String notificationId) async {
+    // Marca como lida
+    try {
+      await _firestore.collection('notifications').doc(notificationId).update({'isRead': true});
+    } catch (e) {
+      debugPrint('Erro ao marcar notificação como lida: $e');
+    }
+
     switch (type) {
       case 'message':
         // Navegar para o chat
-        Navigator.pushNamed(context, '/chat', arguments: {
-          'participantId': data['senderId'],
-          'participantName': data['senderName'],
-        });
+        final senderId = data['senderId'] as String?;
+        final payload = data['data'] as Map<String, dynamic>? ?? {};
+        final otherId = payload['otherUserId'] as String? ?? senderId;
+        final otherName = payload['otherUserName'] as String? ?? 'Usuário';
+        final otherPhoto = payload['otherUserPhoto'] as String?;
+        
+        if (otherId != null) {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (_) => ChatPage(
+                otherUserId: otherId,
+                otherUserName: otherName,
+                otherUserPhotoUrl: otherPhoto,
+              ),
+            ),
+          );
+        }
         break;
       case 'connection_request':
         // Exibir solicitações pendentes
-        Navigator.pushNamed(context, '/network');
+        Navigator.push(
+          context,
+          MaterialPageRoute(builder: (_) => const MinhaRedePage()),
+        );
         break;
       case 'connection_accept':
         // Mostrar perfil da conexão aceita
-        Navigator.pushNamed(context, '/profile',
-            arguments: {'userId': data['senderId']});
+        Navigator.push(
+          context,
+          MaterialPageRoute(builder: (_) => const MinhaRedePage()),
+        );
+        break;
+      case 'workout_assigned':
+        // Fecha o dialog se estiver aberto como modal
+        if (widget.asDialog) {
+          Navigator.pop(context);
+        }
+        // Navega para a página de treinos atribuídos (Área Fitness)
+        Navigator.push(
+          context,
+          MaterialPageRoute(builder: (_) => const WorkoutsAssignedPage()),
+        );
+        break;
+      case 'nutrition_plan_assigned':
+      case 'nutrition_plan_updated':
+        // Fecha o dialog se estiver aberto como modal
+        if (widget.asDialog) {
+          Navigator.pop(context);
+        }
+        // Navega para a página de planos nutricionais (Minha Dieta)
+        Navigator.push(
+          context,
+          MaterialPageRoute(builder: (_) => const MyNutritionPage()),
+        );
         break;
       default:
         // Apenas fechar modal
