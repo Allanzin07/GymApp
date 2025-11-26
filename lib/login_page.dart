@@ -173,29 +173,44 @@ class _LoginPageState extends State<LoginPage> {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        backgroundColor: Colors.red,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back),
-          onPressed: _goBack,
+    return Theme(
+      data: ThemeData.light().copyWith(
+        scaffoldBackgroundColor: Colors.transparent,
+        appBarTheme: const AppBarTheme(
+          backgroundColor: Colors.red,
+          foregroundColor: Colors.white,
         ),
       ),
-      body: Container(
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            colors: [Colors.red, Colors.black],
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
+      child: Scaffold(
+        backgroundColor: Colors.transparent,
+        appBar: AppBar(
+          backgroundColor: Colors.red,
+          leading: IconButton(
+            icon: const Icon(Icons.arrow_back),
+            onPressed: _goBack,
           ),
         ),
-        child: Center(
-          child: SingleChildScrollView(
-            padding: const EdgeInsets.all(24.0),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Image.asset('assets/logo_fundo.png', width: 300, height: 300),
+        body: Container(
+          width: double.infinity,
+          height: double.infinity,
+          decoration: const BoxDecoration(
+            gradient: LinearGradient(
+              colors: [Colors.red, Colors.black],
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+            ),
+          ),
+          child: Center(
+            child: SingleChildScrollView(
+              padding: const EdgeInsets.all(24.0),
+              child: ConstrainedBox(
+                constraints: BoxConstraints(
+                  maxWidth: kIsWeb ? 500 : double.infinity,
+                ),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                  Image.asset('assets/logo_fundo.png', width: kIsWeb ? 250 : 300, height: kIsWeb ? 250 : 300),
                 const SizedBox(height: 25),
 
                 CustomRadiusTextfield(controller: _emailController, hintText: 'E-mail'),
@@ -258,16 +273,20 @@ class _LoginPageState extends State<LoginPage> {
                 const SizedBox(height: 8),
 
                 CustomRadiusButton(onPressed: _goToRegister, text: 'Registrar-se'),
-                const SizedBox(height: 8),
-
-                TextButton(
-                  onPressed: _continueAsGuest,
-                  child: const Text(
-                    'Continuar sem logar',
-                    style: TextStyle(color: Colors.white70, fontSize: 16),
+                // Mostra botão "Continuar sem logar" apenas para usuários
+                if (widget.userType == 'Usuário') ...[
+                  const SizedBox(height: 8),
+                  TextButton(
+                    onPressed: _continueAsGuest,
+                    child: const Text(
+                      'Continuar sem logar',
+                      style: TextStyle(color: Colors.white70, fontSize: 16),
+                    ),
                   ),
+                ],
+                  ],
                 ),
-              ],
+              ),
             ),
           ),
         ),

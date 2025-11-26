@@ -1,11 +1,11 @@
 {
-    "name": "gym_app_completo",
-    "short_name": "gym_app_completo",
+    "name": "GymApp",
+    "short_name": "GymApp",
     "start_url": ".",
     "display": "standalone",
-    "background_color": "#0175C2",
-    "theme_color": "#0175C2",
-    "description": "A new Flutter project.",
+    "background_color": "#000000",
+    "theme_color": "#C62828",
+    "description": "Conecte-se com academias e profissionais de fitness perto de você.",
     "orientation": "portrait-primary",
     "prefer_related_applications": false,
     "icons": [

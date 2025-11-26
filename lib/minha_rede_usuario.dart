@@ -127,64 +127,6 @@ class _MinhaRedeUsuarioState extends State<MinhaRedeUsuario> {
     }
   }
 
-  /// Aceita uma solicitação de conexão.
-  Future<void> _aceitarSolicitacao(_ConnectionData data) async {
-    try {
-      await data.connectionDoc.reference.update({
-        'status': 'active',
-        'aceitoEm': FieldValue.serverTimestamp(),
-        'isActiveForUsuario': true,
-      });
-
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Solicitação aceita com sucesso.'),
-            backgroundColor: Colors.green,
-          ),
-        );
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Erro ao aceitar solicitação: $e'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
-    }
-  }
-
-  /// Rejeita uma solicitação de conexão.
-  Future<void> _rejeitarSolicitacao(_ConnectionData data) async {
-    try {
-      await data.connectionDoc.reference.update({
-        'status': 'rejected',
-        'rejeitadoEm': FieldValue.serverTimestamp(),
-        'isActiveForUsuario': false,
-      });
-
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Solicitação rejeitada.'),
-            backgroundColor: Colors.orange,
-          ),
-        );
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text('Erro ao rejeitar solicitação: $e'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     return Dialog(
@@ -199,12 +141,12 @@ class _MinhaRedeUsuarioState extends State<MinhaRedeUsuario> {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                const Text(
+                Text(
                   'Minha Rede',
                   style: TextStyle(
                     fontSize: 24,
                     fontWeight: FontWeight.bold,
-                    color: Colors.red,
+                    color: Colors.red.shade400,
                   ),
                 ),
                 IconButton(
@@ -213,7 +155,7 @@ class _MinhaRedeUsuarioState extends State<MinhaRedeUsuario> {
                 ),
               ],
             ),
-            const Divider(),
+            Divider(color: Theme.of(context).dividerTheme.color),
             const SizedBox(height: 8),
             // Conteúdo
             Expanded(
@@ -227,15 +169,21 @@ class _MinhaRedeUsuarioState extends State<MinhaRedeUsuario> {
 
   Widget _buildContent() {
     if (_userId == null) {
-      return const Center(
-        child: Text('Faça login para acessar sua rede.'),
+      return Center(
+        child: Text(
+          'Faça login para acessar sua rede.',
+          style: TextStyle(color: Theme.of(context).textTheme.bodyLarge?.color),
+        ),
       );
     }
 
     final stream = _getConnectionsStream();
     if (stream == null) {
-      return const Center(
-        child: Text('Não foi possível carregar suas conexões.'),
+      return Center(
+        child: Text(
+          'Não foi possível carregar suas conexões.',
+          style: TextStyle(color: Theme.of(context).textTheme.bodyLarge?.color),
+        ),
       );
     }
 
@@ -250,14 +198,20 @@ class _MinhaRedeUsuarioState extends State<MinhaRedeUsuario> {
 
         if (snapshot.hasError) {
           return Center(
-            child: Text('Erro ao carregar conexões: ${snapshot.error}'),
+            child: Text(
+              'Erro ao carregar conexões: ${snapshot.error}',
+              style: TextStyle(color: Theme.of(context).textTheme.bodyLarge?.color),
+            ),
           );
         }
 
         final docs = snapshot.data?.docs ?? [];
         if (docs.isEmpty) {
-          return const Center(
-            child: Text('Nenhuma conexão encontrada.'),
+          return Center(
+            child: Text(
+              'Nenhuma conexão encontrada.',
+              style: TextStyle(color: Theme.of(context).textTheme.bodyLarge?.color),
+            ),
           );
         }
 
@@ -282,21 +236,12 @@ class _MinhaRedeUsuarioState extends State<MinhaRedeUsuario> {
               return status == 'active' && isActive == true;
             }).toList();
 
-            final solicitacoes = connections.where((conn) {
-              final status = (conn.connection['status'] as String?) ?? 'pending';
-              final isActive = conn.connection['isActiveForUsuario'] ?? false;
-              return status != 'active' && status != 'rejected' && isActive != true;
-            }).toList();
-
             return SingleChildScrollView(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   // Painel: Minhas Conexões Ativas
                   _buildPanelConexoesAtivas(conexoesAtivas),
-                  const SizedBox(height: 16),
-                  // Painel: Solicitações
-                  _buildPanelSolicitacoes(solicitacoes),
                 ],
               ),
             );
@@ -319,67 +264,27 @@ class _MinhaRedeUsuarioState extends State<MinhaRedeUsuario> {
               children: [
                 Icon(Icons.people, color: Colors.green.shade700),
                 const SizedBox(width: 8),
-                const Text(
+                Text(
                   'Minhas Conexões Ativas',
                   style: TextStyle(
                     fontSize: 18,
                     fontWeight: FontWeight.bold,
-                    color: Colors.black87,
+                    color: Theme.of(context).textTheme.titleLarge?.color,
                   ),
                 ),
               ],
             ),
             const SizedBox(height: 12),
             if (conexoes.isEmpty)
-              const Padding(
-                padding: EdgeInsets.all(16),
+              Padding(
+                padding: const EdgeInsets.all(16),
                 child: Text(
                   'Nenhuma conexão ativa no momento.',
-                  style: TextStyle(color: Colors.black54),
+                  style: TextStyle(color: Theme.of(context).textTheme.bodySmall?.color),
                 ),
               )
             else
               ...conexoes.map((conn) => _buildConnectionCard(conn, isActive: true)),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Widget _buildPanelSolicitacoes(List<_ConnectionData> solicitacoes) {
-    return Card(
-      elevation: 2,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Icon(Icons.notifications_active, color: Colors.orange.shade700),
-                const SizedBox(width: 8),
-                const Text(
-                  'Solicitações',
-                  style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.black87,
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            if (solicitacoes.isEmpty)
-              const Padding(
-                padding: EdgeInsets.all(16),
-                child: Text(
-                  'Nenhuma solicitação pendente.',
-                  style: TextStyle(color: Colors.black54),
-                ),
-              )
-            else
-              ...solicitacoes.map((conn) => _buildConnectionCard(conn, isActive: false)),
           ],
         ),
       ),
@@ -398,9 +303,9 @@ class _MinhaRedeUsuarioState extends State<MinhaRedeUsuario> {
       margin: const EdgeInsets.only(bottom: 12),
       padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
-        color: Colors.grey.shade50,
+        color: Theme.of(context).cardTheme.color,
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: Colors.grey.shade300),
+        border: Border.all(color: Theme.of(context).dividerTheme.color ?? Colors.grey.shade700),
       ),
       child: Row(
         children: [
@@ -419,9 +324,10 @@ class _MinhaRedeUsuarioState extends State<MinhaRedeUsuario> {
               children: [
                 Text(
                   nome,
-                  style: const TextStyle(
+                  style: TextStyle(
                     fontSize: 16,
                     fontWeight: FontWeight.bold,
+                    color: Theme.of(context).textTheme.titleMedium?.color,
                   ),
                 ),
                 const SizedBox(height: 4),
@@ -432,14 +338,14 @@ class _MinhaRedeUsuarioState extends State<MinhaRedeUsuario> {
                           ? Icons.person_outline
                           : Icons.fitness_center,
                       size: 16,
-                      color: Colors.grey.shade600,
+                      color: Theme.of(context).iconTheme.color?.withOpacity(0.7),
                     ),
                     const SizedBox(width: 4),
                     Text(
                       tipo,
                       style: TextStyle(
                         fontSize: 14,
-                        color: Colors.grey.shade600,
+                        color: Theme.of(context).textTheme.bodySmall?.color,
                       ),
                     ),
                   ],
@@ -447,23 +353,6 @@ class _MinhaRedeUsuarioState extends State<MinhaRedeUsuario> {
               ],
             ),
           ),
-          // Ações (apenas para solicitações)
-          if (!isActive)
-            Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                IconButton(
-                  icon: const Icon(Icons.check_circle, color: Colors.green),
-                  onPressed: () => _aceitarSolicitacao(data),
-                  tooltip: 'Aceitar',
-                ),
-                IconButton(
-                  icon: const Icon(Icons.cancel, color: Colors.red),
-                  onPressed: () => _rejeitarSolicitacao(data),
-                  tooltip: 'Rejeitar',
-                ),
-              ],
-            ),
         ],
       ),
     );

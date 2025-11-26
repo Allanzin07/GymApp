@@ -99,16 +99,28 @@ service cloud.firestore {
       allow read: if true;
       // Permite criar se o ID do documento for igual ao UID autenticado
       allow create: if isSignedIn() && academiaId == request.auth.uid;
-      // Permite atualizar/deletar se for o dono
-      allow update, delete: if isOwner(academiaId);
+      // Permite atualizar se for o dono OU se for apenas atualizando campos de avaliação
+      allow update: if isOwner(academiaId) || (
+        isSignedIn() && 
+        // Verifica se apenas os campos rating e avaliacao estão sendo modificados
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['rating', 'avaliacao'])
+      );
+      // Permite deletar apenas se for o dono
+      allow delete: if isOwner(academiaId);
     }
 
     match /professionals/{profissionalId} {
       allow read: if true;
       // Permite criar se o ID do documento for igual ao UID autenticado
       allow create: if isSignedIn() && profissionalId == request.auth.uid;
-      // Permite atualizar/deletar se for o dono
-      allow update, delete: if isOwner(profissionalId);
+      // Permite atualizar se for o dono OU se for apenas atualizando campos de avaliação
+      allow update: if isOwner(profissionalId) || (
+        isSignedIn() && 
+        // Verifica se apenas os campos rating e avaliacao estão sendo modificados
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['rating', 'avaliacao'])
+      );
+      // Permite deletar apenas se for o dono
+      allow delete: if isOwner(profissionalId);
     }
 
     match /users/{userId} {
@@ -196,6 +208,40 @@ service cloud.firestore {
       // Exclusão: apenas o nutricionista que criou pode deletar
       allow delete: if isSignedIn()
         && resource.data.createdBy == request.auth.uid;
+    }
+
+    // ---------------------------------------------------------
+    // Avaliações (ratings)
+    // Estrutura: targetId, targetType, userId, rating, comment, createdAt, updatedAt
+    // Permite que usuários avaliem profissionais e academias
+    // ---------------------------------------------------------
+    match /ratings/{ratingId} {
+      // Leitura: qualquer um pode ler avaliações (público)
+      allow read: if true;
+      
+      // Criação: apenas usuários autenticados podem criar avaliações
+      // O userId deve ser igual ao auth.uid do usuário logado
+      // Aceita valores decimais de 0.0 a 5.0
+      allow create: if isSignedIn()
+        && request.resource.data.userId == request.auth.uid
+        && request.resource.data.targetId is string
+        && request.resource.data.targetType is string
+        && (request.resource.data.rating is int || request.resource.data.rating is float)
+        && request.resource.data.rating >= 0.0
+        && request.resource.data.rating <= 5.0;
+      
+      // Atualização: apenas o usuário que criou a avaliação pode atualizá-la
+      // Aceita valores decimais de 0.0 a 5.0
+      allow update: if isSignedIn()
+        && resource.data.userId == request.auth.uid
+        && request.resource.data.userId == request.auth.uid
+        && (request.resource.data.rating is int || request.resource.data.rating is float)
+        && request.resource.data.rating >= 0.0
+        && request.resource.data.rating <= 5.0;
+      
+      // Exclusão: apenas o usuário que criou a avaliação pode deletá-la
+      allow delete: if isSignedIn()
+        && resource.data.userId == request.auth.uid;
     }
 
     // Demais caminhos negados por padrão

@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'pages/mapa_page.dart';
 
 import 'firebase_options.dart';
 import 'splash_screen.dart';
@@ -35,17 +34,18 @@ class GymApp extends StatelessWidget {
   Widget build(BuildContext context) {
     return MaterialApp(
       debugShowCheckedModeBanner: false,
-      title: 'Gym Club',
+      title: 'GymApp',
       theme: ThemeData(
+        brightness: Brightness.light,
         primarySwatch: Colors.red,
-        useMaterial3: true,
+        primaryColor: Colors.red,
+        scaffoldBackgroundColor: Colors.white,
+        appBarTheme: const AppBarTheme(
+          backgroundColor: Colors.red,
+          foregroundColor: Colors.white,
+        ),
       ),
       home: const SplashScreen(),
-
-      // 👇 ADICIONE ISSO
-      routes: {
-        '/mapa': (context) => const MapaPage(),
-      },
     );
   }
 }

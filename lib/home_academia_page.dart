@@ -12,6 +12,7 @@ import 'chat_page.dart';
 import 'notifications_button.dart';
 import 'notifications_service.dart';
 import 'chat_service.dart';
+import 'ratings_widget.dart';
 
 /// Widget reutilizável para botão de conexão que verifica status e permite conectar/desconectar
 class _ConnectionButton extends StatelessWidget {
@@ -328,6 +329,39 @@ class _HomeAcademiaPageState extends State<HomeAcademiaPage> {
     }
   }
 
+  Future<void> _confirmLogout() async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Confirmar Logout'),
+        content: const Text('Deseja realmente sair da sua conta?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancelar'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(
+              backgroundColor: Colors.red,
+              foregroundColor: Colors.white,
+            ),
+            child: const Text('Sair'),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm == true && mounted) {
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(
+          builder: (_) => const LoginPage(userType: 'Academia'),
+        ),
+      );
+    }
+  }
+
   void _openChat({
     required String participantName,
     String? participantPhotoUrl,
@@ -415,14 +449,7 @@ class _HomeAcademiaPageState extends State<HomeAcademiaPage> {
                     IconButton(
                       icon: const Icon(Icons.logout, color: Colors.white),
                       tooltip: 'Sair',
-                      onPressed: () {
-                        Navigator.pushReplacement(
-                          context,
-                          MaterialPageRoute(
-                            builder: (_) => const LoginPage(userType: 'Academia'),
-                          ),
-                        );
-                      },
+                      onPressed: () => _confirmLogout(),
                     ),
                   ]
                 : null,
@@ -490,16 +517,21 @@ class _HomeAcademiaPageState extends State<HomeAcademiaPage> {
                   ),
                 )
               : null,
-          body: SingleChildScrollView(
-            child: Column(
-              children: [
-                // 📸 Foto de capa
-                Stack(
-                  clipBehavior: Clip.none,
+          body: Center(
+            child: ConstrainedBox(
+              constraints: BoxConstraints(
+                maxWidth: kIsWeb ? 1200 : double.infinity,
+              ),
+              child: SingleChildScrollView(
+                child: Column(
                   children: [
-                    Container(
-                      height: 180,
-                      width: double.infinity,
+                    // 📸 Foto de capa
+                    Stack(
+                      clipBehavior: Clip.none,
+                      children: [
+                        Container(
+                          height: 180,
+                          width: double.infinity,
                       decoration: BoxDecoration(
                         image: DecorationImage(
                           image: NetworkImage(capaUrl),
@@ -513,7 +545,7 @@ class _HomeAcademiaPageState extends State<HomeAcademiaPage> {
                       left: 20,
                       child: CircleAvatar(
                         radius: 50,
-                        backgroundColor: Colors.white,
+                        backgroundColor: Theme.of(context).cardTheme.color ?? Colors.white,
                         backgroundImage: NetworkImage(fotoPerfilUrl),
                       ),
                     ),
@@ -528,28 +560,29 @@ class _HomeAcademiaPageState extends State<HomeAcademiaPage> {
                     children: [
                       Text(
                         nome,
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 24,
                           fontWeight: FontWeight.bold,
+                          color: Theme.of(context).textTheme.titleLarge?.color,
                         ),
                       ),
                       const SizedBox(height: 6),
                       Text(
                         descricao,
-                        style: const TextStyle(
+                        style: TextStyle(
                           fontSize: 16,
-                          color: Colors.black87,
+                          color: Theme.of(context).textTheme.bodyLarge?.color,
                         ),
                       ),
                       const SizedBox(height: 12),
                       Row(
                         children: [
-                          const Icon(Icons.location_on, color: Colors.grey, size: 18),
+                          Icon(Icons.location_on, color: Theme.of(context).iconTheme.color?.withOpacity(0.7), size: 18),
                           const SizedBox(width: 4),
                           Expanded(
                             child: Text(
                               localizacao,
-                              style: const TextStyle(color: Colors.grey),
+                              style: TextStyle(color: Theme.of(context).textTheme.bodySmall?.color),
                             ),
                           ),
                         ],
@@ -558,28 +591,28 @@ class _HomeAcademiaPageState extends State<HomeAcademiaPage> {
                       if (email.isNotEmpty)
                         Row(
                           children: [
-                            const Icon(Icons.email, color: Colors.grey, size: 18),
+                            Icon(Icons.email, color: Theme.of(context).iconTheme.color?.withOpacity(0.7), size: 18),
                             const SizedBox(width: 4),
-                            Text(email, style: const TextStyle(color: Colors.grey)),
+                            Text(email, style: TextStyle(color: Theme.of(context).textTheme.bodySmall?.color)),
                           ],
                         ),
                       if (whatsapp.isNotEmpty)
                         Row(
                           children: [
-                            const Icon(Icons.phone, color: Colors.grey, size: 18),
+                            Icon(Icons.phone, color: Theme.of(context).iconTheme.color?.withOpacity(0.7), size: 18),
                             const SizedBox(width: 4),
-                            Text(whatsapp, style: const TextStyle(color: Colors.grey)),
+                            Text(whatsapp, style: TextStyle(color: Theme.of(context).textTheme.bodySmall?.color)),
                           ],
                         ),
                       if (link.isNotEmpty)
                         Row(
                           children: [
-                            const Icon(Icons.link, color: Colors.grey, size: 18),
+                            Icon(Icons.link, color: Theme.of(context).iconTheme.color?.withOpacity(0.7), size: 18),
                             const SizedBox(width: 4),
                             Flexible(
                               child: Text(
                                 link,
-                                style: const TextStyle(color: Colors.blue),
+                                style: TextStyle(color: Colors.blue.shade300),
                                 overflow: TextOverflow.ellipsis,
                               ),
                             ),
@@ -597,6 +630,12 @@ class _HomeAcademiaPageState extends State<HomeAcademiaPage> {
                             participantName: nome,
                             participantPhotoUrl: fotoPerfilUrl,
                           ),
+                        ),
+                        const SizedBox(height: 16),
+                        RatingsWidget(
+                          targetId: _academiaId,
+                          targetType: 'academia',
+                          currentUserId: _auth.currentUser?.uid,
                         ),
                         const SizedBox(height: 16),
                       ],
@@ -638,8 +677,10 @@ class _HomeAcademiaPageState extends State<HomeAcademiaPage> {
                   userPhotoUrl: fotoPerfilUrl,
                   collectionName: 'academias',
                 ),
-                const SizedBox(height: 40),
-              ],
+                    const SizedBox(height: 40),
+                  ],
+                ),
+              ),
             ),
           ),
         );

@@ -31,10 +31,13 @@ dependencies:
   firebase_auth: ^6.1.0 # Sugiro conferir a versão mais recente compatível com seu ambiente
   google_sign_in: ^6.2.1
   supabase_flutter: ^2.5.0
+  provider: ^6.1.1
+  shared_preferences: ^2.2.2
 
 dev_dependencies:
   flutter_test:
     sdk: flutter
+  flutter_launcher_icons: ^0.13.1
 
 flutter:
   uses-material-design: true
@@ -42,3 +45,16 @@ flutter:
     - assets/logo_fundo.png
     - assets/google_logo.png
     - assets/logo_nome_fundo.png
+    - assets/app_icon.png
+
+# Configuração do App Icon
+flutter_launcher_icons:
+  android: true
+  ios: false  # Desabilitado pois não há pasta iOS no projeto
+  web:
+    generate: true
+    image_path: "assets/app_icon.png"
+    background_color: "#000000"
+  image_path: "assets/app_icon.png"
+  adaptive_icon_background: "#000000"
+  adaptive_icon_foreground: "assets/app_icon.png"

@@ -205,23 +205,34 @@ class _RegisterPageState extends State<RegisterPage> {
   // UI
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      appBar: AppBar(
-        title: Text('Criar Conta - ${widget.userType}'),
-        backgroundColor: Colors.red,
-      ),
-      body: Container(
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            colors: [Colors.red, Colors.white],
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-          ),
+    return Theme(
+      data: ThemeData.light().copyWith(
+        scaffoldBackgroundColor: Colors.transparent,
+        appBarTheme: const AppBarTheme(
+          backgroundColor: Colors.red,
+          foregroundColor: Colors.white,
         ),
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            children: [
+      ),
+      child: Scaffold(
+        backgroundColor: Colors.transparent,
+        appBar: AppBar(
+          title: Text('Criar Conta - ${widget.userType}'),
+          backgroundColor: Colors.red,
+        ),
+        body: Container(
+          width: double.infinity,
+          height: double.infinity,
+          decoration: const BoxDecoration(
+            gradient: LinearGradient(
+              colors: [Colors.red, Colors.black],
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+            ),
+          ),
+          child: SingleChildScrollView(
+            padding: const EdgeInsets.all(24),
+            child: Column(
+              children: [
               const SizedBox(height: 24),
 
               GestureDetector(
@@ -309,6 +320,7 @@ class _RegisterPageState extends State<RegisterPage> {
             ],
           ),
         ),
+      ),
       ),
     );
   }

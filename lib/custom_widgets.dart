@@ -28,6 +28,7 @@ class CustomRadiusTextfield extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final isDark = Theme.of(context).brightness == Brightness.dark;
     return TextField(
       controller: controller,
       focusNode: focusNode,
@@ -38,7 +39,9 @@ class CustomRadiusTextfield extends StatelessWidget {
       inputFormatters: inputFormatters,
       decoration: InputDecoration(
         hintText: hintText,
-        hintStyle: const TextStyle(color: Colors.black54),
+        hintStyle: TextStyle(
+          color: isDark ? Colors.grey.shade400 : Colors.black54,
+        ),
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(10),
           borderSide: BorderSide(color: Colors.red.shade700),
@@ -51,13 +54,15 @@ class CustomRadiusTextfield extends StatelessWidget {
           borderRadius: BorderRadius.circular(10),
           borderSide: const BorderSide(color: Colors.red, width: 2),
         ),
-        fillColor: Colors.white,
+        fillColor: isDark ? Colors.black : Colors.white,
         filled: true,
         contentPadding:
             const EdgeInsets.symmetric(horizontal: 16, vertical: 14),
         suffixIcon: suffixIcon,
       ),
-      style: const TextStyle(color: Colors.black87),
+      style: TextStyle(
+        color: isDark ? Colors.white : Colors.black87,
+      ),
       cursorColor: Colors.red,
     );
   }

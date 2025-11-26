@@ -110,7 +110,7 @@ class _AdCard extends StatelessWidget {
           child: Container(
             width: cardWidth,
             decoration: BoxDecoration(
-              color: Colors.grey.shade200,
+              color: Theme.of(context).cardTheme.color ?? Colors.grey.shade200,
               borderRadius: BorderRadius.circular(12),
               boxShadow: [
                 BoxShadow(

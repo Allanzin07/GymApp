@@ -737,12 +737,12 @@ class _PostFeedWidgetState extends State<PostFeedWidget> {
               children: [
                 CircleAvatar(
                   radius: 20,
-                  backgroundColor: Colors.grey.shade300,
+                  backgroundColor: Theme.of(context).cardTheme.color ?? Colors.grey.shade300,
                   backgroundImage: widget.userPhotoUrl.isNotEmpty
                       ? NetworkImage(widget.userPhotoUrl)
                       : null,
                   child: widget.userPhotoUrl.isEmpty
-                      ? const Icon(Icons.person, size: 20)
+                      ? Icon(Icons.person, size: 20, color: Theme.of(context).iconTheme.color)
                       : null,
                 ),
                 const SizedBox(width: 12),
@@ -750,13 +750,15 @@ class _PostFeedWidgetState extends State<PostFeedWidget> {
                   child: TextField(
                     controller: _textController,
                     maxLines: 4,
+                    style: TextStyle(color: Theme.of(context).textTheme.bodyLarge?.color),
                     decoration: InputDecoration(
                       hintText: 'O que você está pensando?',
+                      hintStyle: TextStyle(color: Theme.of(context).textTheme.bodySmall?.color),
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(20),
                       ),
                       filled: true,
-                      fillColor: Colors.grey.shade100,
+                      fillColor: Theme.of(context).inputDecorationTheme.fillColor,
                       contentPadding: const EdgeInsets.symmetric(
                         horizontal: 16,
                         vertical: 12,
@@ -852,9 +854,9 @@ class _PostFeedWidgetState extends State<PostFeedWidget> {
                   child: TextButton.icon(
                     onPressed: _isUploading ? null : _pickImage,
                     icon: const Icon(Icons.photo, color: Colors.green),
-                    label: const Text('Foto'),
+                    label: Text('Foto', style: TextStyle(color: Theme.of(context).textTheme.bodyLarge?.color)),
                     style: TextButton.styleFrom(
-                      foregroundColor: Colors.grey.shade700,
+                      foregroundColor: Theme.of(context).textTheme.bodyMedium?.color,
                     ),
                   ),
                 ),
@@ -862,9 +864,9 @@ class _PostFeedWidgetState extends State<PostFeedWidget> {
                   child: TextButton.icon(
                     onPressed: _isUploading ? null : _pickVideo,
                     icon: const Icon(Icons.video_library, color: Colors.red),
-                    label: const Text('Vídeo'),
+                    label: Text('Vídeo', style: TextStyle(color: Theme.of(context).textTheme.bodyLarge?.color)),
                     style: TextButton.styleFrom(
-                      foregroundColor: Colors.grey.shade700,
+                      foregroundColor: Theme.of(context).textTheme.bodyMedium?.color,
                     ),
                   ),
                 ),
@@ -900,9 +902,9 @@ class _PostFeedWidgetState extends State<PostFeedWidget> {
                     : null, // indeterminado
               ),
               const SizedBox(height: 4),
-              const Text(
+              Text(
                 'Enviando...',
-                style: TextStyle(fontSize: 12, color: Colors.grey),
+                style: TextStyle(fontSize: 12, color: Theme.of(context).textTheme.bodySmall?.color),
                 textAlign: TextAlign.center,
               ),
             ],
@@ -1362,17 +1364,23 @@ class _PostCardState extends State<_PostCard> {
         children: [
           ListTile(
             leading: CircleAvatar(
-              backgroundColor: Colors.grey.shade300,
+              backgroundColor: Theme.of(context).cardTheme.color ?? Colors.grey.shade300,
               backgroundImage: userPhotoUrl.isNotEmpty
                   ? NetworkImage(userPhotoUrl)
                   : null,
-              child: userPhotoUrl.isEmpty ? const Icon(Icons.person) : null,
+              child: userPhotoUrl.isEmpty ? Icon(Icons.person, color: Theme.of(context).iconTheme.color) : null,
             ),
             title: Text(
               userName,
-              style: const TextStyle(fontWeight: FontWeight.bold),
+              style: TextStyle(
+                fontWeight: FontWeight.bold,
+                color: Theme.of(context).textTheme.titleMedium?.color,
+              ),
             ),
-            subtitle: Text('${_formatDate(timestamp)}$editedLabel'),
+            subtitle: Text(
+              '${_formatDate(timestamp)}$editedLabel',
+              style: TextStyle(color: Theme.of(context).textTheme.bodySmall?.color),
+            ),
             trailing: widget.canManage
                 ? PopupMenuButton<String>(
                     onSelected: (value) {
@@ -1403,7 +1411,10 @@ class _PostCardState extends State<_PostCard> {
               padding: const EdgeInsets.symmetric(horizontal: 16),
               child: Text(
                 text,
-                style: const TextStyle(fontSize: 15),
+                style: TextStyle(
+                  fontSize: 15,
+                  color: Theme.of(context).textTheme.bodyLarge?.color,
+                ),
               ),
             ),
           if (mediaUrl != null) ...[

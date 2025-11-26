@@ -26,16 +26,23 @@ class ChooseLoginTypePage extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      body: Container(
-        decoration: const BoxDecoration(
-          gradient: LinearGradient(
-            colors: [Colors.red, Colors.black],
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
+    return Theme(
+      data: ThemeData.light().copyWith(
+        scaffoldBackgroundColor: Colors.transparent,
+      ),
+      child: Scaffold(
+        backgroundColor: Colors.transparent,
+        body: Container(
+          width: double.infinity,
+          height: double.infinity,
+          decoration: const BoxDecoration(
+            gradient: LinearGradient(
+              colors: [Colors.red, Colors.black],
+              begin: Alignment.topCenter,
+              end: Alignment.bottomCenter,
+            ),
           ),
-        ),
-        child: Center(
+          child: Center(
           child: SingleChildScrollView(
             padding: const EdgeInsets.all(24.0),
             child: ConstrainedBox(
@@ -82,6 +89,7 @@ class ChooseLoginTypePage extends StatelessWidget {
             ),
           ),
         ),
+      ),
       ),
     );
   }

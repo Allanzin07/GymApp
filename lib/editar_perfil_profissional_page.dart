@@ -34,6 +34,7 @@ class _EditarPerfilProfissionalPageState
   final TextEditingController _emailController = TextEditingController();
   final TextEditingController _whatsappController = TextEditingController();
   final TextEditingController _linkController = TextEditingController();
+  final TextEditingController _crefCrnController = TextEditingController();
 
   // Imagens
   Uint8List? _fotoPerfilBytes;
@@ -78,6 +79,7 @@ class _EditarPerfilProfissionalPageState
         _emailController.text = data['email'] ?? '';
         _whatsappController.text = data['whatsapp'] ?? '';
         _linkController.text = data['link'] ?? '';
+        _crefCrnController.text = data['crefCrn'] ?? '';
         _fotoPerfilUrlAtual = data['fotoUrl'];
         _fotoCapaUrlAtual = data['capaUrl'];
         
@@ -251,6 +253,7 @@ class _EditarPerfilProfissionalPageState
         'email': _emailController.text.trim(),
         'whatsapp': _whatsappController.text.trim(),
         'link': _linkController.text.trim(),
+        'crefCrn': _crefCrnController.text.trim(),
         'fotoUrl': fotoPerfilUrl,
         'capaUrl': fotoCapaUrl,
         'atualizadoEm': FieldValue.serverTimestamp(),
@@ -402,6 +405,66 @@ class _EditarPerfilProfissionalPageState
 
                         _campo(_descricaoController, 'Descrição',
                             maxLines: 4),
+                        const SizedBox(height: 16),
+                        
+                        // Campo CREF/CRN
+                        Card(
+                          color: Colors.blue.shade50,
+                          child: Padding(
+                            padding: const EdgeInsets.all(12),
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Row(
+                                  children: [
+                                    Icon(Icons.verified, color: Colors.blue.shade700, size: 20),
+                                    const SizedBox(width: 8),
+                                    const Text(
+                                      'CREF / CRN',
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 14,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                const SizedBox(height: 8),
+                                Container(
+                                  padding: const EdgeInsets.all(10),
+                                  decoration: BoxDecoration(
+                                    color: Colors.blue.shade100,
+                                    borderRadius: BorderRadius.circular(8),
+                                    border: Border.all(
+                                      color: Colors.blue.shade300,
+                                      width: 1,
+                                    ),
+                                  ),
+                                  child: Row(
+                                    children: [
+                                      Icon(
+                                        Icons.info_outline,
+                                        size: 18,
+                                        color: Colors.blue.shade700,
+                                      ),
+                                      const SizedBox(width: 8),
+                                      Expanded(
+                                        child: Text(
+                                          'Digite no formato: CREF xxxxxx ou CRN xxxxxx',
+                                          style: TextStyle(
+                                            fontSize: 11,
+                                            color: Colors.blue.shade900,
+                                          ),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                const SizedBox(height: 8),
+                                _campo(_crefCrnController, 'CREF ou CRN (ex: CREF 123456 ou CRN 123456)'),
+                              ],
+                            ),
+                          ),
+                        ),
                         const SizedBox(height: 16),
 
                         _campo(_localizacaoController, 'Localização (Endereço)'),

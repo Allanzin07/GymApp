@@ -19,6 +19,12 @@ class NotificationsButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final uid = _uid;
+    
+    // Não exibe o botão se não houver usuário autenticado
+    if (uid.isEmpty || FirebaseAuth.instance.currentUser == null) {
+      return const SizedBox.shrink();
+    }
+    
     return StreamBuilder<int>(
       stream: uid.isNotEmpty ? NotificationsService().streamUnreadCount(uid) : Stream.value(0),
       builder: (context, snapshot) {
@@ -57,10 +63,21 @@ class NotificationsButton extends StatelessWidget {
   }
 
   void _openPanel(BuildContext context) {
+    // Verifica se há usuário autenticado antes de abrir o painel
+    final uid = _uid;
+    if (uid.isEmpty || FirebaseAuth.instance.currentUser == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Faça login para ver suas notificações.'),
+        ),
+      );
+      return;
+    }
+    
     final width = MediaQuery.of(context).size.width;
     final isWide = width >= wideBreakpoint;
 
-    final panel = NotificationsPanel(currentUserId: _uid);
+    final panel = NotificationsPanel(currentUserId: uid);
 
     if (isWide) {
       // Modal lateral similar ao LinkedIn — aparece como Dialog at the right

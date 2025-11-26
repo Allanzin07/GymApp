@@ -62,21 +62,27 @@ class _SplashScreenState extends State<SplashScreen>
 
   @override
   Widget build(BuildContext context) {
-    return Scaffold(
-      // Removemos o backgroundColor do Scaffold
-      body: FadeTransition(
-        opacity: _fadeAnimation,
-        // Adiciona um Container para aplicar o Gradiente
-        child: Container(
-          decoration: const BoxDecoration(
-            gradient: LinearGradient(
-              // Gradiente do vermelho (topo) para o branco (base)
-              colors: [Color(0xFFC62828), Colors.black],
-              begin: Alignment.topCenter,
-              end: Alignment.bottomCenter,
+    return Theme(
+      data: ThemeData.light().copyWith(
+        scaffoldBackgroundColor: Colors.transparent,
+      ),
+      child: Scaffold(
+        backgroundColor: Colors.transparent,
+        body: FadeTransition(
+          opacity: _fadeAnimation,
+          // Adiciona um Container para aplicar o Gradiente
+          child: Container(
+            width: double.infinity,
+            height: double.infinity,
+            decoration: const BoxDecoration(
+              gradient: LinearGradient(
+                // Gradiente do vermelho (topo) para o branco (base)
+                colors: [Color(0xFFC62828), Colors.black],
+                begin: Alignment.topCenter,
+                end: Alignment.bottomCenter,
+              ),
             ),
-          ),
-          child: Center(
+            child: Center(
             // Imagem Centralizada
             child: Padding(
               padding: const EdgeInsets.all(50.0),
@@ -89,6 +95,7 @@ class _SplashScreenState extends State<SplashScreen>
             ),
           ),
         ),
+      ),
       ),
     );
   }
