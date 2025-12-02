@@ -54,7 +54,8 @@ class ChatService {
   }
 
   /// ENVIA MENSAGEM E ATUALIZA CONTADOR CORRETAMENTE
-  Future<void> sendMessage(String conversationId, Map<String, dynamic> messageData) async {
+  Future<void> sendMessage(
+      String conversationId, Map<String, dynamic> messageData) async {
     final senderId = messageData['senderId']?.toString();
     if (senderId == null) return;
 
@@ -114,7 +115,8 @@ class ChatService {
     final data = snap.data() ?? {};
     final List unreadBy = data['unreadBy'] ?? [];
 
-    if (!unreadBy.contains(uid)) return; // ✅ só zera se realmente tiver pendência
+    if (!unreadBy.contains(uid))
+      return; // ✅ só zera se realmente tiver pendência
 
     await convRef.update({
       'unreadBy': FieldValue.arrayRemove([uid]),
@@ -122,58 +124,71 @@ class ChatService {
     });
   }
 
+  // =======================================================
+  // ✅ FUNÇÃO fetchProfile CORRIGIDA PARA BUSCAR 'name'
+  // =======================================================
   /// BUSCA PERFIL COM CACHE
   Future<Map<String, dynamic>> fetchProfile(String userId) async {
-    if (_profileCache.containsKey(userId)) return _profileCache[userId]!;
-
-    try {
-      final firestore = _firestore;
-
-      final userDoc = await firestore.collection('users').doc(userId).get();
-      if (userDoc.exists) {
-        final data = userDoc.data()!;
-        final normalized = {
-          'nome': data['nome'] ?? data['name'] ?? 'Usuário',
-          'fotoUrl': data['fotoUrl'] ?? data['fotoPerfilUrl'] ?? '',
-          ...data,
-        };
-        _profileCache[userId] = normalized;
-        return normalized;
-      }
-
-      final profDoc = await firestore.collection('professionals').doc(userId).get();
-      if (profDoc.exists) {
-        final data = profDoc.data()!;
-        final normalized = {
-          'nome': data['nome'] ?? 'Profissional',
-          'fotoUrl': data['fotoUrl'] ?? data['fotoPerfilUrl'] ?? '',
-          ...data,
-        };
-        _profileCache[userId] = normalized;
-        return normalized;
-      }
-
-      final acadDoc = await firestore.collection('academias').doc(userId).get();
-      if (acadDoc.exists) {
-        final data = acadDoc.data()!;
-        final normalized = {
-          'nome': data['nome'] ?? 'Academia',
-          'fotoUrl': data['fotoUrl'] ?? data['fotoPerfilUrl'] ?? '',
-          ...data,
-        };
-        _profileCache[userId] = normalized;
-        return normalized;
-      }
-    } catch (e) {
-      debugPrint('Erro ao buscar perfil: $e');
+    // 1. Verifica o cache
+    if (_profileCache.containsKey(userId)) {
+      return _profileCache[userId]!;
     }
 
+    // Define as coleções e as chaves de fallback para nome e foto
+    const collections = ['academias', 'professionals', 'users'];
+
+    // Variáveis para armazenar o nome e a foto que foram encontrados
+    String? finalName;
+    String? finalPhoto;
+
+    try {
+      for (var collectionName in collections) {
+        final doc =
+            await _firestore.collection(collectionName).doc(userId).get();
+
+        if (doc.exists) {
+          final data = doc.data()!;
+
+          // Prioriza 'name' (seu campo para Academias/Profissionais)
+          finalName = data['name'] as String?;
+          if (finalName == null) {
+            // Fallback para 'nome' e 'displayName' (campos comuns para 'users')
+            finalName =
+                data['nome'] as String? ?? data['displayName'] as String?;
+          }
+
+          // Prioriza 'fotoPerfilUrl' (o campo que você tem no Firestore)
+          finalPhoto = data['fotoPerfilUrl'] as String?;
+          if (finalPhoto == null) {
+            // Fallback para 'fotoUrl'
+            finalPhoto = data['fotoUrl'] as String?;
+          }
+
+          // Se encontramos, paramos e padronizamos os dados
+          final normalized = {
+            // GARANTIDO: o nome agora é lido e padronizado para 'nome'
+            'nome': finalName ?? 'Contato Desconhecido',
+            // GARANTIDO: a foto agora é lida e padronizada para 'fotoUrl'
+            'fotoUrl': finalPhoto,
+            'userType': collectionName,
+            ...data,
+          };
+
+          _profileCache[userId] = normalized;
+          return normalized;
+        }
+      }
+    } catch (e) {
+      debugPrint('Erro ao buscar perfil para $userId: $e');
+    }
+
+    // Fallback se não for encontrado em nenhuma coleção
     final fallback = {
       'nome': 'Contato',
       'fotoUrl': '',
     };
-
     _profileCache[userId] = fallback;
     return fallback;
   }
+  // =======================================================
 }

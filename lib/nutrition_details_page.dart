@@ -10,6 +10,17 @@ class NutritionDetailsPage extends StatelessWidget {
     required this.nutricionistaName,
   });
 
+  // Lista com a ordem correta dos dias em inglês (chaves do mapa)
+  final List<String> _dayOrder = const [
+    'monday',
+    'tuesday',
+    'wednesday',
+    'thursday',
+    'friday',
+    'saturday',
+    'sunday',
+  ];
+
   String _getDayName(String day) {
     final dayNames = {
       'monday': 'Segunda-feira',
@@ -121,10 +132,12 @@ class NutritionDetailsPage extends StatelessWidget {
             ),
           ),
 
-          // Refeições por dia
-          ...days.entries.map((dayEntry) {
-            final day = dayEntry.key;
-            final meals = dayEntry.value as Map<String, dynamic>? ?? {};
+          // Refeições por dia (CORRIGIDO PARA ORDENAR)
+          ..._dayOrder.map((day) {
+            // Se o dia não existir no plano de dados, ignora
+            if (!days.containsKey(day)) return const SizedBox.shrink();
+
+            final meals = days[day] as Map<String, dynamic>? ?? {};
 
             if (meals.isEmpty) return const SizedBox.shrink();
 
@@ -190,6 +203,3 @@ class NutritionDetailsPage extends StatelessWidget {
     );
   }
 }
-
-
-

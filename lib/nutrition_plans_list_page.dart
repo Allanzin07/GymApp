@@ -7,6 +7,70 @@ import 'send_nutrition_plan_page.dart';
 class NutritionPlansListPage extends StatelessWidget {
   const NutritionPlansListPage({super.key});
 
+  // Função para confirmar e excluir um plano alimentar
+  static Future<void> _confirmDeletePlan(
+    BuildContext context,
+    FirebaseFirestore firestore,
+    String planId,
+    String planTitle,
+  ) async {
+    // Mostra diálogo de confirmação
+    final confirmDelete = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext dialogContext) {
+        return AlertDialog(
+          title: const Text('Confirmar Exclusão'),
+          content: Text(
+            'Tem certeza que deseja excluir o plano alimentar "$planTitle"?\n\nEsta ação não pode ser desfeita.',
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(false),
+              child: const Text('Cancelar'),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.of(dialogContext).pop(true),
+              style: ElevatedButton.styleFrom(
+                backgroundColor: Colors.red,
+                foregroundColor: Colors.white,
+              ),
+              child: const Text('Excluir'),
+            ),
+          ],
+        );
+      },
+    );
+
+    // Se o usuário confirmou, exclui o plano
+    if (confirmDelete == true) {
+      try {
+        await firestore.collection('nutrition_plans').doc(planId).delete();
+        
+        // Mostra mensagem de sucesso
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Plano alimentar excluído com sucesso!'),
+              backgroundColor: Colors.green,
+              duration: Duration(seconds: 2),
+            ),
+          );
+        }
+      } catch (e) {
+        // Mostra mensagem de erro
+        if (context.mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text('Erro ao excluir plano: $e'),
+              backgroundColor: Colors.red,
+              duration: const Duration(seconds: 3),
+            ),
+          );
+        }
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     final _firestore = FirebaseFirestore.instance;
@@ -256,6 +320,11 @@ class NutritionPlansListPage extends StatelessWidget {
                             ),
                           );
                         },
+                      ),
+                      IconButton(
+                        icon: const Icon(Icons.delete, color: Colors.red),
+                        tooltip: 'Excluir',
+                        onPressed: () => _confirmDeletePlan(context, _firestore, doc.id, title),
                       ),
                       const Icon(Icons.arrow_forward_ios, size: 16),
                     ],

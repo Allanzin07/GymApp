@@ -1,6 +1,12 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
+import 'home_academia_page.dart';
+import 'home_profissional_page.dart';
+
+// 🚨 IMPORTANTE: Você deve garantir que estes imports existam e apontem para os seus arquivos:
+// import 'home_academia_page.dart';
+// import 'home_profissional_page.dart';
 
 /// Modal que exibe a rede de conexões do usuário logado.
 /// Mostra conexões ativas e solicitações pendentes.
@@ -23,6 +29,16 @@ class _ConnectionData {
   final String partnerType; // 'profissional' ou 'academia'
 
   Map<String, dynamic> get connection => connectionDoc.data() ?? {};
+
+  String get partnerId =>
+      connectionDoc.id; // ID do documento da conexão (não o UID do parceiro)
+
+  // Retorna o UID real do parceiro (Academia ou Profissional)
+  String get targetId {
+    return connection['profissionalId'] as String? ??
+        connection['academiaId'] as String? ??
+        '';
+  }
 }
 
 class _MinhaRedeUsuarioState extends State<MinhaRedeUsuario> {
@@ -50,35 +66,47 @@ class _MinhaRedeUsuarioState extends State<MinhaRedeUsuario> {
   }
 
   /// Busca o parceiro (profissional ou academia) relacionado à conexão.
-  Future<Map<String, dynamic>?> _buscarParceiro(String partnerId) async {
-    if (_partnerCache.containsKey(partnerId)) {
-      return _partnerCache[partnerId];
+  Future<Map<String, dynamic>?> _buscarParceiro(
+    String partnerId,
+    String expectedType, // NOVO PARAMETRO
+  ) async {
+    final cacheKey = '$partnerId-$expectedType';
+    if (_partnerCache.containsKey(cacheKey)) {
+      return _partnerCache[cacheKey];
     }
 
     try {
-      // 1) Busca em professionals
-      final profDoc =
-          await _firestore.collection('professionals').doc(partnerId).get();
-      if (profDoc.exists) {
-        final data = profDoc.data();
-        if (data != null) {
-          _partnerCache[partnerId] = {...data, '_type': 'profissional'};
-          return _partnerCache[partnerId];
+      if (expectedType == 'profissional') {
+        final profDoc =
+            await _firestore.collection('professionals').doc(partnerId).get();
+        if (profDoc.exists) {
+          final data = profDoc.data();
+          if (data != null) {
+            _partnerCache[cacheKey] = {
+              ...data,
+              '_type': 'profissional',
+              'uid': profDoc.id
+            }; // Adiciona UID
+            return _partnerCache[cacheKey];
+          }
+        }
+      } else if (expectedType == 'academia') {
+        final acadDoc =
+            await _firestore.collection('academias').doc(partnerId).get();
+        if (acadDoc.exists) {
+          final data = acadDoc.data();
+          if (data != null) {
+            _partnerCache[cacheKey] = {
+              ...data,
+              '_type': 'academia',
+              'uid': acadDoc.id
+            }; // Adiciona UID
+            return _partnerCache[cacheKey];
+          }
         }
       }
 
-      // 2) Busca em academias
-      final acadDoc =
-          await _firestore.collection('academias').doc(partnerId).get();
-      if (acadDoc.exists) {
-        final data = acadDoc.data();
-        if (data != null) {
-          _partnerCache[partnerId] = {...data, '_type': 'academia'};
-          return _partnerCache[partnerId];
-        }
-      }
-
-      return null;
+      return null; // Não encontrou na coleção esperada.
     } catch (_) {
       return null;
     }
@@ -103,27 +131,72 @@ class _MinhaRedeUsuarioState extends State<MinhaRedeUsuario> {
         partnerType = 'academia';
       }
 
-      if (partnerId == null) return null;
+      if (partnerId == null || partnerType == null) return null;
 
-      final partner = await _buscarParceiro(partnerId);
+      // Chama a função CORRIGIDA
+      final partner = await _buscarParceiro(partnerId, partnerType);
+
+      // PONTO DE DEBUG: (pode ser removido após o TCC)
+      // print('--- Parceiro Encontrado: ${partner?['nome']} (Tipo: $partnerType) ---');
+
       if (partner == null) {
         return _ConnectionData(
           partner: {
             'nome': 'Parceiro não encontrado',
-            '_type': partnerType ?? 'desconhecido',
+            '_type': partnerType,
           },
           connectionDoc: doc,
-          partnerType: partnerType ?? 'desconhecido',
+          partnerType: partnerType,
         );
       }
 
       return _ConnectionData(
         partner: partner,
         connectionDoc: doc,
-        partnerType: partner['_type'] as String? ?? partnerType ?? 'desconhecido',
+        partnerType: partner['_type'] as String? ?? partnerType,
       );
     } catch (e) {
+      // print('Erro ao resolver conexão: $e');
       return null;
+    }
+  }
+
+  // Lógica de navegação para a tela de perfil
+  void _navigateToPartnerProfile(_ConnectionData data) {
+    // 1. Feche o modal de Minha Rede antes de navegar
+    Navigator.of(context).pop();
+
+    // 2. Determina o ID e o Tipo para a navegação
+    final partnerUid = data.targetId;
+    final partnerType = data.partnerType;
+
+    if (partnerUid.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+            content: Text('Não foi possível encontrar o ID do parceiro.')),
+      );
+      return;
+    }
+
+    // Navega para a tela apropriada
+    if (partnerType == 'academia') {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => HomeAcademiaPage(academiaId: partnerUid),
+        ),
+      );
+    } else if (partnerType == 'profissional') {
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (_) => HomeProfissionalPage(profissionalId: partnerUid),
+        ),
+      );
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Tipo de perfil não suportado.')),
+      );
     }
   }
 
@@ -200,7 +273,8 @@ class _MinhaRedeUsuarioState extends State<MinhaRedeUsuario> {
           return Center(
             child: Text(
               'Erro ao carregar conexões: ${snapshot.error}',
-              style: TextStyle(color: Theme.of(context).textTheme.bodyLarge?.color),
+              style: TextStyle(
+                  color: Theme.of(context).textTheme.bodyLarge?.color),
             ),
           );
         }
@@ -210,7 +284,8 @@ class _MinhaRedeUsuarioState extends State<MinhaRedeUsuario> {
           return Center(
             child: Text(
               'Nenhuma conexão encontrada.',
-              style: TextStyle(color: Theme.of(context).textTheme.bodyLarge?.color),
+              style: TextStyle(
+                  color: Theme.of(context).textTheme.bodyLarge?.color),
             ),
           );
         }
@@ -231,7 +306,8 @@ class _MinhaRedeUsuarioState extends State<MinhaRedeUsuario> {
 
             // Separa conexões ativas e solicitações pendentes
             final conexoesAtivas = connections.where((conn) {
-              final status = (conn.connection['status'] as String?) ?? 'pending';
+              final status =
+                  (conn.connection['status'] as String?) ?? 'pending';
               final isActive = conn.connection['isActiveForUsuario'] ?? false;
               return status == 'active' && isActive == true;
             }).toList();
@@ -280,82 +356,98 @@ class _MinhaRedeUsuarioState extends State<MinhaRedeUsuario> {
                 padding: const EdgeInsets.all(16),
                 child: Text(
                   'Nenhuma conexão ativa no momento.',
-                  style: TextStyle(color: Theme.of(context).textTheme.bodySmall?.color),
+                  style: TextStyle(
+                      color: Theme.of(context).textTheme.bodySmall?.color),
                 ),
               )
             else
-              ...conexoes.map((conn) => _buildConnectionCard(conn, isActive: true)),
+              ...conexoes
+                  .map((conn) => _buildConnectionCard(conn, isActive: true)),
           ],
         ),
       ),
     );
   }
 
+  // 🚨 CORREÇÃO: Adicionando InkWell para capturar o clique e navegar
   Widget _buildConnectionCard(_ConnectionData data, {required bool isActive}) {
     final partner = data.partner;
     final nome = partner['nome'] as String? ?? 'Nome não informado';
-    final tipo = data.partnerType == 'profissional' ? 'Profissional' : 'Academia';
+    final tipo =
+        data.partnerType == 'profissional' ? 'Profissional' : 'Academia';
     final fotoUrl = partner['fotoUrl'] as String? ??
         partner['fotoPerfilUrl'] as String? ??
         'https://cdn-icons-png.flaticon.com/512/149/149071.png';
 
     return Container(
       margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.all(12),
       decoration: BoxDecoration(
         color: Theme.of(context).cardTheme.color,
         borderRadius: BorderRadius.circular(8),
-        border: Border.all(color: Theme.of(context).dividerTheme.color ?? Colors.grey.shade700),
+        border: Border.all(
+            color:
+                Theme.of(context).dividerTheme.color ?? Colors.grey.shade700),
       ),
-      child: Row(
-        children: [
-          // Foto
-          CircleAvatar(
-            radius: 30,
-            backgroundImage: NetworkImage(fotoUrl),
-            onBackgroundImageError: (_, __) {},
-            child: const Icon(Icons.person),
-          ),
-          const SizedBox(width: 12),
-          // Informações
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(
-                  nome,
-                  style: TextStyle(
-                    fontSize: 16,
-                    fontWeight: FontWeight.bold,
-                    color: Theme.of(context).textTheme.titleMedium?.color,
-                  ),
-                ),
-                const SizedBox(height: 4),
-                Row(
+      child: InkWell(
+        onTap: () => _navigateToPartnerProfile(data), // ⬅️ Ação de clique
+        borderRadius: BorderRadius.circular(8),
+        highlightColor: Colors.red.shade50.withOpacity(0.5),
+        splashColor: Colors.red.shade100,
+        child: Padding(
+          padding: const EdgeInsets.all(12),
+          child: Row(
+            children: [
+              // Foto
+              CircleAvatar(
+                radius: 30,
+                backgroundImage: NetworkImage(fotoUrl),
+                onBackgroundImageError: (_, __) {},
+                child: const Icon(Icons.person),
+              ),
+              const SizedBox(width: 12),
+              // Informações
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Icon(
-                      data.partnerType == 'profissional'
-                          ? Icons.person_outline
-                          : Icons.fitness_center,
-                      size: 16,
-                      color: Theme.of(context).iconTheme.color?.withOpacity(0.7),
-                    ),
-                    const SizedBox(width: 4),
                     Text(
-                      tipo,
+                      nome,
                       style: TextStyle(
-                        fontSize: 14,
-                        color: Theme.of(context).textTheme.bodySmall?.color,
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                        color: Theme.of(context).textTheme.titleMedium?.color,
                       ),
+                    ),
+                    const SizedBox(height: 4),
+                    Row(
+                      children: [
+                        Icon(
+                          data.partnerType == 'profissional'
+                              ? Icons.person_outline
+                              : Icons.fitness_center,
+                          size: 16,
+                          color: Theme.of(context)
+                              .iconTheme
+                              .color
+                              ?.withOpacity(0.7),
+                        ),
+                        const SizedBox(width: 4),
+                        Text(
+                          tipo,
+                          style: TextStyle(
+                            fontSize: 14,
+                            color: Theme.of(context).textTheme.bodySmall?.color,
+                          ),
+                        ),
+                      ],
                     ),
                   ],
                 ),
-              ],
-            ),
+              ),
+            ],
           ),
-        ],
+        ),
       ),
     );
   }
 }
-

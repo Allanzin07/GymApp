@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart' show kIsWeb, debugPrint;
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'login_page.dart';
+import 'choose_login_type_page.dart';
 import 'editar_perfil_profissional_page.dart';
 import 'post_feed_widget.dart';
 import 'minha_rede_page.dart';
@@ -55,12 +55,13 @@ class _ConnectionButton extends StatelessWidget {
     }
 
     final _firestore = FirebaseFirestore.instance;
-    
+
     return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
       stream: _firestore
           .collection('connections')
           .where('usuarioId', isEqualTo: currentUserId)
-          .where(targetType == 'profissional' ? 'profissionalId' : 'academiaId', isEqualTo: targetId)
+          .where(targetType == 'profissional' ? 'profissionalId' : 'academiaId',
+              isEqualTo: targetId)
           .limit(1)
           .snapshots(),
       builder: (context, snapshot) {
@@ -90,7 +91,8 @@ class _ConnectionButton extends StatelessWidget {
                 style: ElevatedButton.styleFrom(
                   backgroundColor: Colors.red,
                   foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(12),
                   ),
@@ -105,7 +107,8 @@ class _ConnectionButton extends StatelessWidget {
                 style: ElevatedButton.styleFrom(
                   backgroundColor: Colors.green,
                   foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(12),
                   ),
@@ -120,7 +123,8 @@ class _ConnectionButton extends StatelessWidget {
                 style: ElevatedButton.styleFrom(
                   backgroundColor: Colors.orange,
                   foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(12),
                   ),
@@ -136,13 +140,14 @@ class _ConnectionButton extends StatelessWidget {
                 icon: const Icon(Icons.hourglass_empty),
                 label: const Text('Aguardando'),
               )
-              else
+            else
               // Outro status (rejected, etc) - permite conectar novamente
               ElevatedButton.icon(
                 style: ElevatedButton.styleFrom(
                   backgroundColor: Colors.red,
                   foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(12),
                   ),
@@ -156,7 +161,8 @@ class _ConnectionButton extends StatelessWidget {
               style: OutlinedButton.styleFrom(
                 foregroundColor: Colors.red.shade700,
                 side: BorderSide(color: Colors.red.shade300, width: 1.5),
-                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(12),
                 ),
@@ -186,11 +192,41 @@ class _HomeProfissionalPageState extends State<HomeProfissionalPage> {
   final _auth = FirebaseAuth.instance;
 
   String get _profissionalId {
-    return widget.profissionalId ?? _auth.currentUser?.uid ?? 'profissional_demo';
+    return widget.profissionalId ??
+        _auth.currentUser?.uid ??
+        'profissional_demo';
   }
 
   bool get _isOwner =>
-      widget.profissionalId == null || widget.profissionalId == _auth.currentUser?.uid;
+      widget.profissionalId == null ||
+      widget.profissionalId == _auth.currentUser?.uid;
+
+  void _showZoomableImage(BuildContext context, String imageUrl, String name) {
+    Navigator.push(
+      context,
+      PageRouteBuilder(
+        opaque: false, // Torna a rota transparente para ver o fundo
+        barrierDismissible:
+            true, // Permite fechar ao tocar fora (comportamento padrão de um Diálogo)
+        pageBuilder: (context, animation, secondaryAnimation) {
+          return Center(
+            child: ZoomableProfileView(
+              imageUrl: imageUrl,
+              name: name,
+              heroTag: 'profile-picture-$_profissionalId',
+            ),
+          );
+        },
+        // Adiciona um efeito de fade na transição
+        transitionsBuilder: (context, animation, secondaryAnimation, child) {
+          return FadeTransition(
+            opacity: animation,
+            child: child,
+          );
+        },
+      ),
+    );
+  }
 
   Future<void> _connectWithProfessional() async {
     final currentUser = _auth.currentUser;
@@ -215,13 +251,15 @@ class _HomeProfissionalPageState extends State<HomeProfissionalPage> {
         final data = doc.data();
         final currentStatus = (data['status'] as String?) ?? 'pending';
         if (!data.containsKey('status')) {
-          await doc.reference.set({'status': 'pending'}, SetOptions(merge: true));
+          await doc.reference
+              .set({'status': 'pending'}, SetOptions(merge: true));
         }
         if (!mounted) return;
         final message = currentStatus == 'active'
             ? 'Você já está conectado a este profissional.'
             : 'Aguardando aprovação deste profissional.';
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(message)));
         return;
       }
 
@@ -240,8 +278,8 @@ class _HomeProfissionalPageState extends State<HomeProfissionalPage> {
         final chatService = ChatService();
         final userProfile = await chatService.fetchProfile(currentUser.uid);
         final userName = userProfile['nome'] as String? ??
-                        userProfile['name'] as String? ??
-                        'Usuário';
+            userProfile['name'] as String? ??
+            'Usuário';
 
         await notificationsService.createNotification(
           senderId: currentUser.uid,
@@ -260,7 +298,8 @@ class _HomeProfissionalPageState extends State<HomeProfissionalPage> {
 
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Solicitação registrada! Verifique sua rede.')),
+        const SnackBar(
+            content: Text('Solicitação registrada! Verifique sua rede.')),
       );
 
       Navigator.push(
@@ -353,12 +392,26 @@ class _HomeProfissionalPageState extends State<HomeProfissionalPage> {
     );
 
     if (confirm == true && mounted) {
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(
-          builder: (_) => const LoginPage(userType: 'Profissional'),
-        ),
-      );
+      try {
+        // Faz logout do Firebase Auth
+        await FirebaseAuth.instance.signOut();
+
+        // Navega para a tela de escolha de login removendo todas as rotas anteriores
+        Navigator.pushAndRemoveUntil(
+          context,
+          MaterialPageRoute(builder: (_) => const ChooseLoginTypePage()),
+          (route) => false,
+        );
+      } catch (e) {
+        // Em caso de erro, ainda tenta navegar
+        if (mounted) {
+          Navigator.pushAndRemoveUntil(
+            context,
+            MaterialPageRoute(builder: (_) => const ChooseLoginTypePage()),
+            (route) => false,
+          );
+        }
+      }
     }
   }
 
@@ -380,7 +433,8 @@ class _HomeProfissionalPageState extends State<HomeProfissionalPage> {
             child: Align(
               alignment: Alignment.bottomRight,
               child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 420, maxHeight: 600),
+                constraints:
+                    const BoxConstraints(maxWidth: 420, maxHeight: 600),
                 child: Material(
                   borderRadius: BorderRadius.circular(16),
                   clipBehavior: Clip.antiAlias,
@@ -414,7 +468,10 @@ class _HomeProfissionalPageState extends State<HomeProfissionalPage> {
   @override
   Widget build(BuildContext context) {
     return StreamBuilder<DocumentSnapshot>(
-      stream: _firestore.collection('professionals').doc(_profissionalId).snapshots(),
+      stream: _firestore
+          .collection('professionals')
+          .doc(_profissionalId)
+          .snapshots(),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Scaffold(
@@ -427,8 +484,10 @@ class _HomeProfissionalPageState extends State<HomeProfissionalPage> {
         final data = snapshot.data?.data() as Map<String, dynamic>? ?? {};
 
         final nome = data['nome'] ?? 'Nome do Profissional';
-        final especialidade = data['especialidade'] ?? 'Especialidade não informada';
-        final descricao = data['descricao'] ?? 'Descrição ainda não cadastrada.';
+        final especialidade =
+            data['especialidade'] ?? 'Especialidade não informada';
+        final descricao =
+            data['descricao'] ?? 'Descrição ainda não cadastrada.';
         final crefCrn = data['crefCrn'] as String? ?? '';
         final localizacao = data['localizacao'] ?? '';
         final email = data['email'] ?? '';
@@ -515,7 +574,8 @@ class _HomeProfissionalPageState extends State<HomeProfissionalPage> {
                         },
                       ),
                       ListTile(
-                        leading: const Icon(Icons.fitness_center, color: Colors.red),
+                        leading:
+                            const Icon(Icons.fitness_center, color: Colors.red),
                         title: const Text(
                           'Área Fitness',
                           style: TextStyle(fontWeight: FontWeight.bold),
@@ -546,206 +606,263 @@ class _HomeProfissionalPageState extends State<HomeProfissionalPage> {
                     Stack(
                       clipBehavior: Clip.none,
                       children: [
+                        // Container da foto de capa
                         Container(
                           height: 180,
                           width: double.infinity,
-                      decoration: BoxDecoration(
-                        image: DecorationImage(
-                          image: NetworkImage(capaUrl),
-                          fit: BoxFit.cover,
+                          decoration: BoxDecoration(
+                            image: DecorationImage(
+                              image: NetworkImage(capaUrl),
+                              fit: BoxFit.cover,
+                            ),
+                          ),
                         ),
-                      ),
-                    ),
-                    // 🖼️ Foto de perfil
-                    Positioned(
-                      bottom: -50,
-                      left: 20,
-                      child: CircleAvatar(
-                        radius: 50,
-                        backgroundColor: Theme.of(context).cardTheme.color ?? Colors.white,
-                        backgroundImage: NetworkImage(fotoUrl),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 60),
-                // Nome e descrição
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16.0),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        crossAxisAlignment: CrossAxisAlignment.center,
-                        children: [
-                          Expanded(
-                            child: Text(
-                              nome,
-                              style: TextStyle(
-                                fontSize: 24,
-                                fontWeight: FontWeight.bold,
-                                color: Theme.of(context).textTheme.titleLarge?.color,
+                        // 🖼️ Foto de perfil - AGORA COM ZOOM (HERO ANIMATION)
+                        Positioned(
+                          bottom: -50,
+                          left: 20,
+                          // Usamos GestureDetector para capturar o toque
+                          child: GestureDetector(
+                            onTap: () =>
+                                _showZoomableImage(context, fotoUrl, nome),
+                            // Usamos Hero para a animação de transição (zoom suave)
+                            child: Hero(
+                              // A tag DEVE ser única para este widget (use o ID do profissional)
+                              tag: 'profile-picture-$_profissionalId',
+                              child: CircleAvatar(
+                                radius: 50,
+                                backgroundColor:
+                                    Theme.of(context).cardTheme.color ??
+                                        Colors.white,
+                                backgroundImage: NetworkImage(fotoUrl),
                               ),
                             ),
                           ),
-                          if (crefCrn.isNotEmpty) ...[
-                            const SizedBox(width: 8),
-                            Container(
-                              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                              decoration: BoxDecoration(
-                                color: Colors.blue.shade50,
-                                borderRadius: BorderRadius.circular(12),
-                                border: Border.all(color: Colors.blue.shade300, width: 1.5),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 60),
+                    // Nome e descrição
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            crossAxisAlignment: CrossAxisAlignment.center,
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  nome,
+                                  style: TextStyle(
+                                    fontSize: 24,
+                                    fontWeight: FontWeight.bold,
+                                    color: Theme.of(context)
+                                        .textTheme
+                                        .titleLarge
+                                        ?.color,
+                                  ),
+                                ),
                               ),
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Icon(
-                                    Icons.verified,
-                                    size: 16,
-                                    color: Colors.blue.shade700,
+                              if (crefCrn.isNotEmpty) ...[
+                                const SizedBox(width: 8),
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                      horizontal: 8, vertical: 4),
+                                  decoration: BoxDecoration(
+                                    color: Colors.blue.shade50,
+                                    borderRadius: BorderRadius.circular(12),
+                                    border: Border.all(
+                                        color: Colors.blue.shade300,
+                                        width: 1.5),
                                   ),
-                                  const SizedBox(width: 4),
-                                  Text(
-                                    crefCrn.toUpperCase(),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(
+                                        Icons.verified,
+                                        size: 16,
+                                        color: Colors.blue.shade700,
+                                      ),
+                                      const SizedBox(width: 4),
+                                      Text(
+                                        crefCrn.toUpperCase(),
+                                        style: TextStyle(
+                                          fontSize: 11,
+                                          fontWeight: FontWeight.bold,
+                                          color: Colors.blue.shade700,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ],
+                          ),
+                          const SizedBox(height: 6),
+                          Text(
+                            especialidade,
+                            style: TextStyle(
+                              fontSize: 16,
+                              color: Colors.red.shade400,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          Text(
+                            descricao,
+                            style: TextStyle(
+                              fontSize: 16,
+                              color:
+                                  Theme.of(context).textTheme.bodyLarge?.color,
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          if (localizacao.isNotEmpty)
+                            Row(
+                              children: [
+                                Icon(Icons.location_on,
+                                    color: Theme.of(context)
+                                        .iconTheme
+                                        .color
+                                        ?.withOpacity(0.7),
+                                    size: 18),
+                                const SizedBox(width: 4),
+                                Expanded(
+                                  child: Text(
+                                    localizacao,
                                     style: TextStyle(
-                                      fontSize: 11,
-                                      fontWeight: FontWeight.bold,
-                                      color: Colors.blue.shade700,
-                                    ),
+                                        color: Theme.of(context)
+                                            .textTheme
+                                            .bodySmall
+                                            ?.color),
                                   ),
-                                ],
+                                ),
+                              ],
+                            ),
+                          if (email.isNotEmpty) ...[
+                            const SizedBox(height: 8),
+                            Row(
+                              children: [
+                                Icon(Icons.email,
+                                    color: Theme.of(context)
+                                        .iconTheme
+                                        .color
+                                        ?.withOpacity(0.7),
+                                    size: 18),
+                                const SizedBox(width: 4),
+                                Text(email,
+                                    style: TextStyle(
+                                        color: Theme.of(context)
+                                            .textTheme
+                                            .bodySmall
+                                            ?.color)),
+                              ],
+                            ),
+                          ],
+                          if (whatsapp.isNotEmpty) ...[
+                            const SizedBox(height: 8),
+                            Row(
+                              children: [
+                                Icon(Icons.phone,
+                                    color: Theme.of(context)
+                                        .iconTheme
+                                        .color
+                                        ?.withOpacity(0.7),
+                                    size: 18),
+                                const SizedBox(width: 4),
+                                Text(whatsapp,
+                                    style: TextStyle(
+                                        color: Theme.of(context)
+                                            .textTheme
+                                            .bodySmall
+                                            ?.color)),
+                              ],
+                            ),
+                          ],
+                          if (link.isNotEmpty) ...[
+                            const SizedBox(height: 8),
+                            Row(
+                              children: [
+                                Icon(Icons.link,
+                                    color: Theme.of(context)
+                                        .iconTheme
+                                        .color
+                                        ?.withOpacity(0.7),
+                                    size: 18),
+                                const SizedBox(width: 4),
+                                Flexible(
+                                  child: Text(
+                                    link,
+                                    style:
+                                        TextStyle(color: Colors.blue.shade300),
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ],
+                          const SizedBox(height: 16),
+                          if (!_isOwner) ...[
+                            _ConnectionButton(
+                              currentUserId: _auth.currentUser?.uid,
+                              targetId: _profissionalId,
+                              targetType: 'profissional',
+                              onConnect: _connectWithProfessional,
+                              onDisconnect: _disconnectFromProfessional,
+                              onChat: () => _openChat(
+                                participantName: nome,
+                                participantPhotoUrl: fotoUrl,
                               ),
                             ),
+                            const SizedBox(height: 16),
+                            RatingsWidget(
+                              targetId: _profissionalId,
+                              targetType: 'profissional',
+                              currentUserId: _auth.currentUser?.uid,
+                            ),
+                            const SizedBox(height: 16),
+                          ],
+                          if (_isOwner) ...[
+                            Align(
+                              alignment: Alignment.centerLeft,
+                              child: ElevatedButton.icon(
+                                onPressed: () {
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (_) =>
+                                          const EditarPerfilProfissionalPage(),
+                                    ),
+                                  );
+                                },
+                                icon:
+                                    const Icon(Icons.edit, color: Colors.white),
+                                label: const Text(
+                                  "Editar Perfil",
+                                  style: TextStyle(color: Colors.white),
+                                ),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: Colors.red,
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 16),
                           ],
                         ],
                       ),
-                      const SizedBox(height: 6),
-                      Text(
-                        especialidade,
-                        style: TextStyle(
-                          fontSize: 16,
-                          color: Colors.red.shade400,
-                          fontWeight: FontWeight.w500,
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      Text(
-                        descricao,
-                        style: TextStyle(
-                          fontSize: 16,
-                          color: Theme.of(context).textTheme.bodyLarge?.color,
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      if (localizacao.isNotEmpty)
-                        Row(
-                          children: [
-                            Icon(Icons.location_on, color: Theme.of(context).iconTheme.color?.withOpacity(0.7), size: 18),
-                            const SizedBox(width: 4),
-                            Expanded(
-                              child: Text(
-                                localizacao,
-                                style: TextStyle(color: Theme.of(context).textTheme.bodySmall?.color),
-                              ),
-                            ),
-                          ],
-                        ),
-                      if (email.isNotEmpty) ...[
-                        const SizedBox(height: 8),
-                        Row(
-                          children: [
-                            Icon(Icons.email, color: Theme.of(context).iconTheme.color?.withOpacity(0.7), size: 18),
-                            const SizedBox(width: 4),
-                            Text(email, style: TextStyle(color: Theme.of(context).textTheme.bodySmall?.color)),
-                          ],
-                        ),
-                      ],
-                      if (whatsapp.isNotEmpty) ...[
-                        const SizedBox(height: 8),
-                        Row(
-                          children: [
-                            Icon(Icons.phone, color: Theme.of(context).iconTheme.color?.withOpacity(0.7), size: 18),
-                            const SizedBox(width: 4),
-                            Text(whatsapp, style: TextStyle(color: Theme.of(context).textTheme.bodySmall?.color)),
-                          ],
-                        ),
-                      ],
-                      if (link.isNotEmpty) ...[
-                        const SizedBox(height: 8),
-                        Row(
-                          children: [
-                            Icon(Icons.link, color: Theme.of(context).iconTheme.color?.withOpacity(0.7), size: 18),
-                            const SizedBox(width: 4),
-                            Flexible(
-                              child: Text(
-                                link,
-                                style: TextStyle(color: Colors.blue.shade300),
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            ),
-                          ],
-                        ),
-                      ],
-                      const SizedBox(height: 16),
-                      if (!_isOwner) ...[
-                        _ConnectionButton(
-                          currentUserId: _auth.currentUser?.uid,
-                          targetId: _profissionalId,
-                          targetType: 'profissional',
-                          onConnect: _connectWithProfessional,
-                          onDisconnect: _disconnectFromProfessional,
-                          onChat: () => _openChat(
-                            participantName: nome,
-                            participantPhotoUrl: fotoUrl,
-                          ),
-                        ),
-                        const SizedBox(height: 16),
-                        RatingsWidget(
-                          targetId: _profissionalId,
-                          targetType: 'profissional',
-                          currentUserId: _auth.currentUser?.uid,
-                        ),
-                        const SizedBox(height: 16),
-                      ],
-                      if (_isOwner) ...[
-                        Align(
-                          alignment: Alignment.centerLeft,
-                          child: ElevatedButton.icon(
-                            onPressed: () {
-                              Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (_) => const EditarPerfilProfissionalPage(),
-                                ),
-                              );
-                            },
-                            icon: const Icon(Icons.edit, color: Colors.white),
-                            label: const Text(
-                              "Editar Perfil",
-                              style: TextStyle(color: Colors.white),
-                            ),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.red,
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(height: 16),
-                      ],
-                    ],
-                  ),
-                ),
-                const Divider(height: 32, thickness: 0.8),
-                // Feed de publicações
-                PostFeedWidget(
-                  userId: _profissionalId,
-                  userName: nome,
-                  userPhotoUrl: fotoUrl,
-                  collectionName: 'professionals',
-                ),
+                    ),
+                    const Divider(height: 32, thickness: 0.8),
+                    // Feed de publicações
+                    PostFeedWidget(
+                      userId: _profissionalId,
+                      userName: nome,
+                      userPhotoUrl: fotoUrl,
+                      collectionName: 'professionals',
+                    ),
                     const SizedBox(height: 40),
                   ],
                 ),
@@ -754,6 +871,92 @@ class _HomeProfissionalPageState extends State<HomeProfissionalPage> {
           ),
         );
       },
+    );
+  }
+}
+
+class ZoomableProfileView extends StatelessWidget {
+  final String imageUrl;
+  final String name;
+  final String heroTag;
+
+  const ZoomableProfileView({
+    super.key,
+    required this.imageUrl,
+    required this.name,
+    required this.heroTag,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    // GestureDetector para fechar ao tocar em qualquer lugar
+    return GestureDetector(
+      onTap: () {
+        Navigator.pop(context); // Fecha a tela de zoom
+      },
+      // Usa um Scafford para garantir que o layout ocupe a tela corretamente
+      child: Scaffold(
+        backgroundColor:
+            Colors.black.withOpacity(0.9), // Fundo escuro semi-transparente
+        body: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              // O Hero deve ter a mesma tag do Hero no perfil (HomeProfissionalPage)
+              Hero(
+                tag: heroTag,
+                child: Image.network(
+                  imageUrl,
+                  // Tenta ocupar a maior parte da tela, mas mantendo a proporção
+                  fit: BoxFit.contain,
+                  height: MediaQuery.of(context).size.height * 0.8,
+                  width: MediaQuery.of(context).size.width * 0.9,
+                  loadingBuilder: (context, child, loadingProgress) {
+                    if (loadingProgress == null) return child;
+                    return SizedBox(
+                      height: 100,
+                      width: 100,
+                      child: Center(
+                        child: CircularProgressIndicator(
+                          value: loadingProgress.expectedTotalBytes != null
+                              ? loadingProgress.cumulativeBytesLoaded /
+                                  loadingProgress.expectedTotalBytes!
+                              : null,
+                          color: Colors.red,
+                        ),
+                      ),
+                    );
+                  },
+                  errorBuilder: (context, error, stackTrace) {
+                    return const Icon(Icons.error,
+                        color: Colors.white, size: 100);
+                  },
+                ),
+              ),
+              const SizedBox(height: 20),
+              Text(
+                name,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold,
+                  decoration: TextDecoration
+                      .none, // Garante que o texto se pareça com o de uma tela
+                ),
+              ),
+              const SizedBox(height: 10),
+              const Text(
+                'Toque para fechar',
+                style: TextStyle(
+                  color: Colors.white70,
+                  fontSize: 14,
+                  decoration: TextDecoration.none,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }

@@ -5,19 +5,25 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'firebase_options.dart';
 import 'splash_screen.dart';
 
+import 'package:flutter/services.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
+
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // -------------------------------
-  // Inicializa Firebase
-  // -------------------------------
+  // 🔥 FullScreen Imersivo (barra inferior some, superior aparece com gesto)
+  SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
+
+  // 🔥 Inicializa Firebase (apenas UMA VEZ)
   await Firebase.initializeApp(
     options: DefaultFirebaseOptions.currentPlatform,
   );
 
-  // -------------------------------
-  // Inicializa Supabase
-  // -------------------------------
+  // 🔔 Pede permissão para notificações (Android 13+)
+  FirebaseMessaging messaging = FirebaseMessaging.instance;
+  await messaging.requestPermission();
+
+  // 📱 Inicializa Supabase
   await Supabase.initialize(
     url: 'https://bgqfvspxsdetxrnbdlsu.supabase.co',
     anonKey:

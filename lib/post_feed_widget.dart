@@ -1,8 +1,8 @@
 import 'dart:io';
 import 'dart:typed_data';
+import 'package:flutter/foundation.dart' show kIsWeb, debugPrint;
 
 import 'package:flutter/material.dart';
-import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:image_picker/image_picker.dart';
@@ -50,6 +50,66 @@ class _PostFeedWidgetState extends State<PostFeedWidget> {
   // =========================================================
   // SELEÇÃO DE MÍDIA
   // =========================================================
+
+  Map<String, dynamic>? _userData;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadUserData();
+  }
+
+  Future<void> _loadUserData() async {
+    final uid = _auth.currentUser?.uid;
+    if (uid == null) return;
+
+    // 1. Determina a coleção principal a ser buscada
+    final collectionToSearch = widget.collectionName.isNotEmpty
+        ? widget.collectionName
+        : 'users'; // Fallback para 'users' se a coleção não for definida
+
+    DocumentSnapshot<Map<String, dynamic>> doc;
+    Map<String, dynamic>? data;
+
+    try {
+      // 2. Tenta buscar na coleção principal (academias/professionals/users)
+      doc = await FirebaseFirestore.instance
+          .collection(collectionToSearch)
+          .doc(uid)
+          .get();
+      data = doc.data();
+
+      // 3. Se não encontrar o perfil na coleção principal (e não for users), tenta buscar em 'users'
+      if (!doc.exists && collectionToSearch != 'users') {
+        final userDoc =
+            await FirebaseFirestore.instance.collection('users').doc(uid).get();
+        data = userDoc.data();
+      }
+    } catch (_) {
+      // Ignora erros de leitura de Firestore, deixando 'data' como null.
+    }
+
+    // 4. Normaliza e prioriza os campos de Nome e Foto
+    String userName =
+        data?['nome'] as String? ?? data?['name'] as String? ?? 'Usuário';
+    String userPhotoUrl =
+        data?['fotoPerfilUrl'] as String? ?? data?['fotoUrl'] as String? ?? '';
+
+    // Fallback: Se o nome do Firestore for genérico/vazio, usa o nome do Firebase Auth (display name)
+    // Isso deve ser o último recurso, pois é o que está dando o nome incorreto (João Victor)
+    if (userName.isEmpty || userName == 'Usuário') {
+      userName = _auth.currentUser?.displayName ?? 'Usuário';
+    }
+
+    setState(() {
+      // 5. Salva os dados normalizados no _userData
+      _userData = {
+        'name': userName,
+        'fotoPerfilUrl': userPhotoUrl,
+        // Você pode adicionar outros dados necessários aqui, se tiver.
+      };
+    });
+  }
 
   Future<XFile?> _selectImageFile() async {
     final source = await showModalBottomSheet<ImageSource>(
@@ -208,7 +268,8 @@ class _PostFeedWidgetState extends State<PostFeedWidget> {
 
     if (text.isEmpty && _selectedImage == null && _selectedVideo == null) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Adicione texto, foto ou vídeo para publicar')),
+        const SnackBar(
+            content: Text('Adicione texto, foto ou vídeo para publicar')),
       );
       return;
     }
@@ -350,7 +411,8 @@ class _PostFeedWidgetState extends State<PostFeedWidget> {
 
   Future<void> _editPost(DocumentSnapshot doc) async {
     final data = doc.data() as Map<String, dynamic>? ?? {};
-    final textController = TextEditingController(text: data['text'] as String? ?? '');
+    final textController =
+        TextEditingController(text: data['text'] as String? ?? '');
     final initialMediaUrl = data['mediaUrl'] as String?;
     final initialMediaType = data['mediaType'] as String?;
     final initialMediaPath = data['mediaPath'] as String?;
@@ -451,7 +513,8 @@ class _PostFeedWidgetState extends State<PostFeedWidget> {
                   ),
                 ),
               );
-            } else if (existingMediaUrl != null && initialMediaType == 'image') {
+            } else if (existingMediaUrl != null &&
+                initialMediaType == 'image') {
               mediaPreview = ClipRRect(
                 borderRadius: BorderRadius.circular(8),
                 child: CachedNetworkImage(
@@ -471,7 +534,8 @@ class _PostFeedWidgetState extends State<PostFeedWidget> {
                   ),
                 ),
               );
-            } else if (existingMediaUrl != null && initialMediaType == 'video') {
+            } else if (existingMediaUrl != null &&
+                initialMediaType == 'video') {
               mediaPreview = Container(
                 height: 200,
                 width: double.infinity,
@@ -514,8 +578,9 @@ class _PostFeedWidgetState extends State<PostFeedWidget> {
                           ),
                         ),
                         IconButton(
-                          onPressed:
-                              disableActions ? null : () => Navigator.pop(context),
+                          onPressed: disableActions
+                              ? null
+                              : () => Navigator.pop(context),
                           icon: const Icon(Icons.close),
                         ),
                       ],
@@ -539,14 +604,16 @@ class _PostFeedWidgetState extends State<PostFeedWidget> {
                       runSpacing: 8,
                       children: [
                         ElevatedButton.icon(
-                          onPressed:
-                              disableActions ? null : () => pickNewImage(modalSetState),
+                          onPressed: disableActions
+                              ? null
+                              : () => pickNewImage(modalSetState),
                           icon: const Icon(Icons.photo),
                           label: const Text('Substituir foto'),
                         ),
                         ElevatedButton.icon(
-                          onPressed:
-                              disableActions ? null : () => pickNewVideo(modalSetState),
+                          onPressed: disableActions
+                              ? null
+                              : () => pickNewVideo(modalSetState),
                           icon: const Icon(Icons.video_library),
                           label: const Text('Substituir vídeo'),
                         ),
@@ -636,7 +703,8 @@ class _PostFeedWidgetState extends State<PostFeedWidget> {
                                       if (newImageBytes != null) {
                                         bytes = newImageBytes!;
                                       } else if (newImageFile != null) {
-                                        bytes = await newImageFile!.readAsBytes();
+                                        bytes =
+                                            await newImageFile!.readAsBytes();
                                       } else {
                                         throw Exception(
                                             'Erro ao ler nova imagem.');
@@ -678,6 +746,8 @@ class _PostFeedWidgetState extends State<PostFeedWidget> {
                                     'updatedAt': FieldValue.serverTimestamp(),
                                   });
 
+                                  FocusScope.of(context).unfocus();
+
                                   if (mounted) {
                                     Navigator.of(context).pop();
                                     ScaffoldMessenger.of(this.context)
@@ -694,8 +764,7 @@ class _PostFeedWidgetState extends State<PostFeedWidget> {
                                   });
                                   ScaffoldMessenger.of(context).showSnackBar(
                                     SnackBar(
-                                        content:
-                                            Text('Erro ao atualizar: $e')),
+                                        content: Text('Erro ao atualizar: $e')),
                                   );
                                 }
                               },
@@ -715,8 +784,6 @@ class _PostFeedWidgetState extends State<PostFeedWidget> {
         );
       },
     );
-
-    textController.dispose();
   }
 
   // =========================================================
@@ -737,12 +804,14 @@ class _PostFeedWidgetState extends State<PostFeedWidget> {
               children: [
                 CircleAvatar(
                   radius: 20,
-                  backgroundColor: Theme.of(context).cardTheme.color ?? Colors.grey.shade300,
+                  backgroundColor:
+                      Theme.of(context).cardTheme.color ?? Colors.grey.shade300,
                   backgroundImage: widget.userPhotoUrl.isNotEmpty
                       ? NetworkImage(widget.userPhotoUrl)
                       : null,
                   child: widget.userPhotoUrl.isEmpty
-                      ? Icon(Icons.person, size: 20, color: Theme.of(context).iconTheme.color)
+                      ? Icon(Icons.person,
+                          size: 20, color: Theme.of(context).iconTheme.color)
                       : null,
                 ),
                 const SizedBox(width: 12),
@@ -750,15 +819,18 @@ class _PostFeedWidgetState extends State<PostFeedWidget> {
                   child: TextField(
                     controller: _textController,
                     maxLines: 4,
-                    style: TextStyle(color: Theme.of(context).textTheme.bodyLarge?.color),
+                    style: TextStyle(
+                        color: Theme.of(context).textTheme.bodyLarge?.color),
                     decoration: InputDecoration(
                       hintText: 'O que você está pensando?',
-                      hintStyle: TextStyle(color: Theme.of(context).textTheme.bodySmall?.color),
+                      hintStyle: TextStyle(
+                          color: Theme.of(context).textTheme.bodySmall?.color),
                       border: OutlineInputBorder(
                         borderRadius: BorderRadius.circular(20),
                       ),
                       filled: true,
-                      fillColor: Theme.of(context).inputDecorationTheme.fillColor,
+                      fillColor:
+                          Theme.of(context).inputDecorationTheme.fillColor,
                       contentPadding: const EdgeInsets.symmetric(
                         horizontal: 16,
                         vertical: 12,
@@ -854,9 +926,13 @@ class _PostFeedWidgetState extends State<PostFeedWidget> {
                   child: TextButton.icon(
                     onPressed: _isUploading ? null : _pickImage,
                     icon: const Icon(Icons.photo, color: Colors.green),
-                    label: Text('Foto', style: TextStyle(color: Theme.of(context).textTheme.bodyLarge?.color)),
+                    label: Text('Foto',
+                        style: TextStyle(
+                            color:
+                                Theme.of(context).textTheme.bodyLarge?.color)),
                     style: TextButton.styleFrom(
-                      foregroundColor: Theme.of(context).textTheme.bodyMedium?.color,
+                      foregroundColor:
+                          Theme.of(context).textTheme.bodyMedium?.color,
                     ),
                   ),
                 ),
@@ -864,9 +940,13 @@ class _PostFeedWidgetState extends State<PostFeedWidget> {
                   child: TextButton.icon(
                     onPressed: _isUploading ? null : _pickVideo,
                     icon: const Icon(Icons.video_library, color: Colors.red),
-                    label: Text('Vídeo', style: TextStyle(color: Theme.of(context).textTheme.bodyLarge?.color)),
+                    label: Text('Vídeo',
+                        style: TextStyle(
+                            color:
+                                Theme.of(context).textTheme.bodyLarge?.color)),
                     style: TextButton.styleFrom(
-                      foregroundColor: Theme.of(context).textTheme.bodyMedium?.color,
+                      foregroundColor:
+                          Theme.of(context).textTheme.bodyMedium?.color,
                     ),
                   ),
                 ),
@@ -883,8 +963,7 @@ class _PostFeedWidgetState extends State<PostFeedWidget> {
                             width: 20,
                             child: CircularProgressIndicator(
                               strokeWidth: 2,
-                              valueColor:
-                                  const AlwaysStoppedAnimation<Color>(
+                              valueColor: const AlwaysStoppedAnimation<Color>(
                                 Colors.white,
                               ),
                             ),
@@ -904,7 +983,9 @@ class _PostFeedWidgetState extends State<PostFeedWidget> {
               const SizedBox(height: 4),
               Text(
                 'Enviando...',
-                style: TextStyle(fontSize: 12, color: Theme.of(context).textTheme.bodySmall?.color),
+                style: TextStyle(
+                    fontSize: 12,
+                    color: Theme.of(context).textTheme.bodySmall?.color),
                 textAlign: TextAlign.center,
               ),
             ],
@@ -986,14 +1067,14 @@ class _PostFeedWidgetState extends State<PostFeedWidget> {
             itemBuilder: (context, index) {
               final doc = docs[index];
               final data = doc.data() as Map<String, dynamic>;
-              return _PostCard(
+              return PostCard(
                 key: ValueKey(doc.id),
                 docId: doc.id,
                 data: data,
                 canManage: _canManage,
                 currentUserId: _auth.currentUser?.uid,
-                currentUserName: _auth.currentUser?.displayName ?? 'Usuário',
-                currentUserPhotoUrl: _auth.currentUser?.photoURL ?? '',
+                currentUserName: _userData?['nome'] ?? _userData?['name'] ?? '',
+                currentUserPhotoUrl: _userData?['fotoPerfilUrl'] ?? '',
                 isAuthenticated: _auth.currentUser != null,
                 onEdit: _canManage ? () => _editPost(doc) : null,
                 onDelete: _canManage ? () => _deletePost(doc) : null,
@@ -1014,10 +1095,11 @@ class _PostFeedWidgetState extends State<PostFeedWidget> {
 }
 
 // =====================================================================
-// A PARTIR DAQUI: _PostCard (NÃO PRECISA DE SUPABASE, MEXE SÓ COM FIRESTORE)
+// A PARTIR DAQUI: PostCard (NÃO PRECISA DE SUPABASE, MEXE SÓ COM FIRESTORE)
 // =====================================================================
 
-class _PostCard extends StatefulWidget {
+/// Widget público para exibir um post com funcionalidade completa de comentários
+class PostCard extends StatefulWidget {
   final String docId;
   final Map<String, dynamic> data;
   final bool canManage;
@@ -1028,7 +1110,7 @@ class _PostCard extends StatefulWidget {
   final String currentUserPhotoUrl;
   final bool isAuthenticated;
 
-  const _PostCard({
+  const PostCard({
     super.key,
     required this.docId,
     required this.data,
@@ -1042,11 +1124,12 @@ class _PostCard extends StatefulWidget {
   });
 
   @override
-  State<_PostCard> createState() => _PostCardState();
+  State<PostCard> createState() => _PostCardState();
 }
 
-class _PostCardState extends State<_PostCard> {
+class _PostCardState extends State<PostCard> {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  final FirebaseAuth _auth = FirebaseAuth.instance;
   final TextEditingController _commentController = TextEditingController();
   bool _showComments = false;
   bool _isSendingComment = false;
@@ -1055,6 +1138,19 @@ class _PostCardState extends State<_PostCard> {
   final Set<String> _replyingCommentIds = {};
   final Set<String> _processingReplies = {};
   final Set<String> _processingDeletes = {};
+  Future<List<QueryDocumentSnapshot<Map<String, dynamic>>>>? _commentsFuture;
+
+  /// Obtém o ID do usuário atual (prioriza widget, depois Firebase Auth)
+  String? get _effectiveUserId {
+    final widgetId = widget.currentUserId?.trim();
+    final authId = _auth.currentUser?.uid;
+    final result = widgetId?.isNotEmpty == true ? widgetId : authId;
+
+    debugPrint(
+        '[PostCard] _effectiveUserId: widgetId=$widgetId, authId=$authId, result=$result');
+
+    return result;
+  }
 
   List<String> get _likedBy {
     final likedBy = widget.data['likedBy'];
@@ -1076,7 +1172,7 @@ class _PostCardState extends State<_PostCard> {
   }
 
   bool get _hasLiked {
-    final userId = widget.currentUserId;
+    final userId = _effectiveUserId;
     if (userId == null) return false;
     return _likedBy.contains(userId);
   }
@@ -1091,15 +1187,44 @@ class _PostCardState extends State<_PostCard> {
   DocumentReference<Map<String, dynamic>> get _postRef =>
       _firestore.collection('posts').doc(widget.docId);
 
-  bool _canManageComment(String? commentUserId) {
+  /// Verifica se o usuário atual pode EXCLUIR o comentário
+  /// O dono do comentário OU o dono do post podem excluir
+  bool _canDeleteComment(String? commentUserId) {
+    final currentUserId = _effectiveUserId;
+
+    // Se é o dono do post → pode excluir tudo
     if (widget.canManage) return true;
-    if (commentUserId == null) return false;
-    return widget.currentUserId != null &&
-        widget.currentUserId == commentUserId;
+
+    if (currentUserId == null) return false;
+
+    // Fallback: se o snapshot ainda não sincronizou userId do comentário,
+    // considere que o comentário acabou de ser criado pelo próprio usuário
+    if (commentUserId == null || commentUserId.trim().isEmpty) {
+      return true;
+    }
+
+    // Caso normal: comparar IDs
+    return commentUserId.trim() == currentUserId.trim();
   }
 
   TextEditingController _replyControllerFor(String commentId) {
     return _replyControllers.putIfAbsent(commentId, TextEditingController.new);
+  }
+
+  @override
+  void didUpdateWidget(covariant PostCard oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // Se o docId mudar, limpe todos os controladores de resposta.
+    // Embora a chave deva garantir que isso não aconteça, é uma segurança extra.
+    if (widget.docId != oldWidget.docId) {
+      for (final controller in _replyControllers.values) {
+        controller.dispose();
+      }
+      _replyControllers.clear();
+      _replyingCommentIds.clear();
+      _processingReplies.clear();
+      _processingDeletes.clear();
+    }
   }
 
   void _toggleReplying(String commentId) {
@@ -1113,101 +1238,47 @@ class _PostCardState extends State<_PostCard> {
     });
   }
 
-  Future<void> _editComment({
-    required DocumentReference<Map<String, dynamic>> docRef,
-    required String initialText,
-  }) async {
-    final controller = TextEditingController(text: initialText);
-    await showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      builder: (sheetContext) {
-        final viewInsets = MediaQuery.of(sheetContext).viewInsets;
-        return Padding(
-          padding: EdgeInsets.only(
-            left: 16,
-            right: 16,
-            top: 16,
-            bottom: 16 + viewInsets.bottom,
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              const Text(
-                'Editar comentário',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-              ),
-              const SizedBox(height: 12),
-              TextField(
-                controller: controller,
-                maxLines: 4,
-                minLines: 2,
-                decoration: const InputDecoration(
-                  border: OutlineInputBorder(),
-                  labelText: 'Atualize seu comentário',
-                ),
-              ),
-              const SizedBox(height: 16),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.end,
-                children: [
-                  TextButton(
-                    onPressed: () => Navigator.pop(sheetContext),
-                    child: const Text('Cancelar'),
-                  ),
-                  const SizedBox(width: 8),
-                  ElevatedButton(
-                    onPressed: () async {
-                      final newText = controller.text.trim();
-                      if (newText.isEmpty) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          const SnackBar(
-                            content: Text('Comentário não pode ficar vazio.'),
-                          ),
-                        );
-                        return;
-                      }
-                      try {
-                        await docRef.update({
-                          'text': newText,
-                          'updatedAt': FieldValue.serverTimestamp(),
-                        });
-                        if (context.mounted) {
-                          Navigator.pop(sheetContext);
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                                content: Text('Comentário atualizado.')),
-                          );
-                        }
-                      } catch (e) {
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(
-                              content:
-                                  Text('Erro ao editar comentário: $e')),
-                        );
-                      }
-                    },
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: Colors.red,
-                      foregroundColor: Colors.white,
-                    ),
-                    child: const Text('Salvar'),
-                  ),
-                ],
-              ),
-            ],
-          ),
-        );
-      },
-    );
-    controller.dispose();
+  Future<List<QueryDocumentSnapshot<Map<String, dynamic>>>>
+      _loadComments() async {
+    final snapshot = await _postRef
+        .collection('comments')
+        .orderBy('createdAt', descending: true)
+        .limit(20)
+        .get();
+
+    // Remove comentários ainda não sincronizados
+    return snapshot.docs
+        .where((doc) => !doc.metadata.hasPendingWrites)
+        .toList();
   }
 
   Future<void> _deleteComment({
     required DocumentReference<Map<String, dynamic>> docRef,
     required bool isReply,
+    required String? commentUserId,
   }) async {
+    debugPrint(
+        '[PostCard] _deleteComment: Iniciando exclusão - commentUserId=$commentUserId, currentUserId=${_effectiveUserId}, canManage=${widget.canManage}');
+
+    // Verifica se o usuário tem permissão para excluir
+    if (!_canDeleteComment(commentUserId)) {
+      debugPrint(
+          '[PostCard] _deleteComment: PERMISSÃO NEGADA - não pode excluir');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content:
+                Text('Você não tem permissão para excluir este comentário.'),
+            duration: Duration(seconds: 2),
+          ),
+        );
+      }
+      return;
+    }
+
+    debugPrint(
+        '[PostCard] _deleteComment: Permissão OK - prosseguindo com exclusão');
+
     if (_processingDeletes.contains(docRef.path)) return;
 
     final confirm = await showDialog<bool>(
@@ -1239,25 +1310,43 @@ class _PostCardState extends State<_PostCard> {
     });
 
     try {
+      debugPrint(
+          '[PostCard] _deleteComment: Deletando comentário - docRef=${docRef.path}, isReply=$isReply');
+
       int decrement = 1;
       if (!isReply) {
+        debugPrint('[PostCard] _deleteComment: Buscando replies...');
         final repliesSnapshot = await docRef.collection('replies').get();
+        debugPrint(
+            '[PostCard] _deleteComment: Encontradas ${repliesSnapshot.size} replies');
+
         for (final replyDoc in repliesSnapshot.docs) {
           await replyDoc.reference.delete();
         }
         decrement += repliesSnapshot.size;
       }
 
+      debugPrint(
+          '[PostCard] _deleteComment: Deletando comentário principal...');
       await docRef.delete();
+
+      debugPrint(
+          '[PostCard] _deleteComment: Atualizando contador de comentários (decrement=$decrement)...');
       await _postRef.update({
         'comments': FieldValue.increment(-decrement),
       });
+
+      debugPrint('[PostCard] _deleteComment: Exclusão concluída com sucesso!');
+
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Comentário excluído.')),
         );
       }
     } catch (e) {
+      debugPrint('[PostCard] _deleteComment: ERRO ao excluir - $e');
+      debugPrint(
+          '[PostCard] _deleteComment: Stack trace: ${StackTrace.current}');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(content: Text('Erro ao excluir comentário: $e')),
@@ -1276,7 +1365,9 @@ class _PostCardState extends State<_PostCard> {
     required String parentCommentId,
     required DocumentReference<Map<String, dynamic>> parentRef,
   }) async {
-    if (!widget.isAuthenticated || widget.currentUserId == null) {
+    final currentUserId = _effectiveUserId;
+
+    if (!widget.isAuthenticated || currentUserId == null) {
       _showLoginSnack('Faça login para responder comentários.');
       return;
     }
@@ -1297,16 +1388,33 @@ class _PostCardState extends State<_PostCard> {
     });
 
     try {
-      await parentRef.collection('replies').add({
-        'userId': widget.currentUserId,
-        'userName': widget.currentUserName,
-        'userPhotoUrl': widget.currentUserPhotoUrl,
+      final replyId = _firestore.collection('tmp').doc().id;
+
+      // 🚨 CORREÇÃO DE NOME E FOTO AQUI:
+      // Prioriza widget.currentUserName e widget.currentUserPhotoUrl
+
+      final userName = widget.currentUserName.isNotEmpty
+          ? widget.currentUserName
+          : (_auth.currentUser?.displayName ??
+              'Usuário'); // Mantém fallback para segurança, mas prioriza o Widget
+
+      final userPhotoUrl = widget.currentUserPhotoUrl.isNotEmpty
+          ? widget.currentUserPhotoUrl
+          : (_auth.currentUser?.photoURL ??
+              ''); // Mantém fallback para segurança
+
+      await parentRef.collection('replies').doc(replyId).set({
+        'userId': currentUserId,
+        'userName': userName,
+        'userPhotoUrl': userPhotoUrl,
         'text': text,
         'createdAt': FieldValue.serverTimestamp(),
       });
+
       await _postRef.update({
         'comments': FieldValue.increment(1),
       });
+
       controller.clear();
       setState(() {
         _replyingCommentIds.remove(parentCommentId);
@@ -1364,11 +1472,13 @@ class _PostCardState extends State<_PostCard> {
         children: [
           ListTile(
             leading: CircleAvatar(
-              backgroundColor: Theme.of(context).cardTheme.color ?? Colors.grey.shade300,
-              backgroundImage: userPhotoUrl.isNotEmpty
-                  ? NetworkImage(userPhotoUrl)
+              backgroundColor:
+                  Theme.of(context).cardTheme.color ?? Colors.grey.shade300,
+              backgroundImage:
+                  userPhotoUrl.isNotEmpty ? NetworkImage(userPhotoUrl) : null,
+              child: userPhotoUrl.isEmpty
+                  ? Icon(Icons.person, color: Theme.of(context).iconTheme.color)
                   : null,
-              child: userPhotoUrl.isEmpty ? Icon(Icons.person, color: Theme.of(context).iconTheme.color) : null,
             ),
             title: Text(
               userName,
@@ -1379,7 +1489,8 @@ class _PostCardState extends State<_PostCard> {
             ),
             subtitle: Text(
               '${_formatDate(timestamp)}$editedLabel',
-              style: TextStyle(color: Theme.of(context).textTheme.bodySmall?.color),
+              style: TextStyle(
+                  color: Theme.of(context).textTheme.bodySmall?.color),
             ),
             trailing: widget.canManage
                 ? PopupMenuButton<String>(
@@ -1465,20 +1576,18 @@ class _PostCardState extends State<_PostCard> {
                     _showComments ? Icons.comment : Icons.comment_outlined,
                     color: _showComments ? Colors.red : null,
                   ),
-                  onPressed: () {
+                  onPressed: () async {
                     setState(() {
                       _showComments = !_showComments;
+
+                      if (_showComments) {
+                        _commentsFuture = _loadComments();
+                      }
                     });
                   },
                   tooltip: 'Comentar',
                 ),
                 Text('$_commentsCount'),
-                const SizedBox(width: 16),
-                IconButton(
-                  icon: const Icon(Icons.share_outlined),
-                  onPressed: () {},
-                  tooltip: 'Compartilhar',
-                ),
               ],
             ),
           ),
@@ -1510,8 +1619,12 @@ class _PostCardState extends State<_PostCard> {
                 );
               }
 
-              final comments = snapshot.data?.docs ??
-                  <QueryDocumentSnapshot<Map<String, dynamic>>>[];
+              // 🔥 FILTRA comentários incompletos (pendingWrites)
+              final allDocs = snapshot.data?.docs ?? [];
+              final comments = allDocs
+                  .where((doc) => !doc.metadata.hasPendingWrites)
+                  .toList();
+
               if (comments.isEmpty) {
                 return const Padding(
                   padding: EdgeInsets.symmetric(vertical: 8),
@@ -1541,7 +1654,10 @@ class _PostCardState extends State<_PostCard> {
               );
             },
           ),
+
           const SizedBox(height: 12),
+
+          // 🔥 Campo de escrever comentário
           Row(
             children: [
               CircleAvatar(
@@ -1603,8 +1719,23 @@ class _PostCardState extends State<_PostCard> {
     final commentText = data['text'] as String? ?? 'Comentário removido';
     final commentUserPhoto = data['userPhotoUrl'] as String? ?? '';
     final createdAt = data['createdAt'];
-    final commentUserId = data['userId'] as String?;
-    final canManageComment = _canManageComment(commentUserId);
+
+    // Garante que o userId seja extraído corretamente, tratando diferentes tipos
+    final commentUserIdRaw = data['userId'];
+    debugPrint(
+        '[PostCard] _buildCommentItem: commentUserIdRaw do Firestore=$commentUserIdRaw (tipo: ${commentUserIdRaw.runtimeType})');
+
+    final commentUserId = commentUserIdRaw?.toString().trim() ?? '';
+    // Se está vazio, considera null
+    final commentUserIdFinal = commentUserId.isEmpty ? null : commentUserId;
+
+    debugPrint(
+        '[PostCard] _buildCommentItem: commentId=$commentId, commentUserIdFinal=$commentUserIdFinal, currentUserId=${_effectiveUserId}');
+
+    // Permissão de exclusão: pode excluir se for dono do comentário OU dono do post
+    final canDeleteComment = _canDeleteComment(commentUserIdFinal);
+    final canManageComment =
+        canDeleteComment; // Mostra menu apenas se pode excluir
     final isReplying = _replyingCommentIds.contains(commentId);
     final replyController = _replyControllerFor(commentId);
     final isSendingReply = _processingReplies.contains(commentId);
@@ -1659,30 +1790,32 @@ class _PostCardState extends State<_PostCard> {
                 const SizedBox(width: 12),
                 PopupMenuButton<String>(
                   enabled: !isDeleting,
+                  icon: Icon(
+                    Icons.more_vert,
+                    size: 18,
+                    color: isDeleting ? Colors.grey : Colors.black87,
+                  ),
                   onSelected: (value) {
-                    switch (value) {
-                      case 'edit':
-                        _editComment(
-                          docRef: doc.reference,
-                          initialText: commentText,
-                        );
-                        break;
-                      case 'delete':
-                        _deleteComment(
-                          docRef: doc.reference,
-                          isReply: isReply,
-                        );
-                        break;
+                    if (value == 'delete') {
+                      _deleteComment(
+                        docRef: doc.reference,
+                        isReply: isReply,
+                        commentUserId: commentUserIdFinal,
+                      );
                     }
                   },
-                  itemBuilder: (context) => const [
-                    PopupMenuItem(
-                      value: 'edit',
-                      child: Text('Editar'),
-                    ),
+                  itemBuilder: (context) => [
+                    // Mostra opção de excluir se o usuário pode excluir (dono do comentário OU dono do post)
                     PopupMenuItem(
                       value: 'delete',
-                      child: Text('Excluir'),
+                      enabled: !isDeleting,
+                      child: const Row(
+                        children: [
+                          Icon(Icons.delete, size: 18, color: Colors.red),
+                          SizedBox(width: 8),
+                          Text('Excluir'),
+                        ],
+                      ),
                     ),
                   ],
                 ),
@@ -1834,7 +1967,9 @@ class _PostCardState extends State<_PostCard> {
   }
 
   Future<void> _toggleLike() async {
-    if (!widget.isAuthenticated || widget.currentUserId == null) {
+    final currentUserId = _effectiveUserId;
+
+    if (!widget.isAuthenticated || currentUserId == null) {
       _showLoginSnack('Faça login para curtir publicações.');
       return;
     }
@@ -1853,13 +1988,14 @@ class _PostCardState extends State<_PostCard> {
         }
 
         final data = snapshot.data() as Map<String, dynamic>;
-        final likedBy =
-            (data['likedBy'] as List<dynamic>? ?? []).map((e) => e.toString()).toList();
+        final likedBy = (data['likedBy'] as List<dynamic>? ?? [])
+            .map((e) => e.toString())
+            .toList();
 
-        if (likedBy.contains(widget.currentUserId)) {
-          likedBy.remove(widget.currentUserId);
+        if (likedBy.contains(currentUserId)) {
+          likedBy.remove(currentUserId);
         } else {
-          likedBy.add(widget.currentUserId!);
+          likedBy.add(currentUserId);
         }
 
         transaction.update(postRef, {
@@ -1883,47 +2019,39 @@ class _PostCardState extends State<_PostCard> {
   }
 
   Future<void> _submitComment() async {
-    if (!widget.isAuthenticated || widget.currentUserId == null) {
-      _showLoginSnack('Faça login para comentar.');
-      return;
-    }
+    final currentUser = FirebaseAuth.instance.currentUser;
+    if (currentUser == null) return;
+
+    final uid = currentUser.uid;
 
     final text = _commentController.text.trim();
-    if (text.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Digite algo para comentar.')),
-      );
-      return;
-    }
+    if (text.isEmpty) return;
 
-    setState(() {
-      _isSendingComment = true;
-    });
+    setState(() => _isSendingComment = true);
 
     try {
-      await _postRef.collection('comments').add({
-        'userId': widget.currentUserId,
-        'userName': widget.currentUserName,
+      final commentId = _firestore.collection('tmp').doc().id;
+
+      await _postRef.collection('comments').doc(commentId).set({
+        'userId': uid,
+        'userName': widget.currentUserName, // AGORA correto
         'userPhotoUrl': widget.currentUserPhotoUrl,
         'text': text,
-        'createdAt': FieldValue.serverTimestamp(),
+        'createdAt': FieldValue.serverTimestamp(), // 🔥 AQUI RESOLVE O BUG!!!
       });
+
       await _postRef.update({
         'comments': FieldValue.increment(1),
       });
+
       _commentController.clear();
-      FocusScope.of(context).unfocus();
     } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Não foi possível enviar o comentário: $e')),
-        );
-      }
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Erro ao comentar: $e')),
+      );
     } finally {
       if (mounted) {
-        setState(() {
-          _isSendingComment = false;
-        });
+        setState(() => _isSendingComment = false);
       }
     }
   }

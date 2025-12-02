@@ -1,7 +1,6 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter/foundation.dart' show debugPrint;
 import 'notifications_service.dart';
 
 /// Página que exibe a rede de conexões do usuário logado.
@@ -57,14 +56,16 @@ class _MinhaRedePageState extends State<MinhaRedePage> {
 
     try {
       String? tipo;
-      
+
       // 1) Verifica se existe em professionals
-      final profDoc =
-          await _firestore.collection('professionals').doc(currentUser.uid).get();
+      final profDoc = await _firestore
+          .collection('professionals')
+          .doc(currentUser.uid)
+          .get();
       if (profDoc.exists) {
         tipo = 'profissional';
       }
-      
+
       // 2) Se não encontrou, verifica academias
       if (tipo == null) {
         final acadDoc =
@@ -73,7 +74,7 @@ class _MinhaRedePageState extends State<MinhaRedePage> {
           tipo = 'academia';
         }
       }
-      
+
       // 3) Se não encontrou, verifica users (por último, pois pode existir em múltiplas coleções)
       if (tipo == null) {
         final userDoc =
@@ -125,12 +126,13 @@ class _MinhaRedePageState extends State<MinhaRedePage> {
         return null;
     }
   }
-  
+
   /// Busca alternativa: tenta encontrar conexões mesmo se o campo não corresponder exatamente
   /// Útil para debug e casos onde o documento pode ter sido criado com ID diferente
-  Future<List<QueryDocumentSnapshot<Map<String, dynamic>>>> _buscarConexoesAlternativa() async {
+  Future<List<QueryDocumentSnapshot<Map<String, dynamic>>>>
+      _buscarConexoesAlternativa() async {
     if (_userId == null || _userType == null) return [];
-    
+
     try {
       // Busca todas as conexões e filtra no cliente
       final allConnections = await _firestore.collection('connections').get();
@@ -147,7 +149,7 @@ class _MinhaRedePageState extends State<MinhaRedePage> {
             return false;
         }
       }).toList();
-      
+
       // Debug: se não encontrou nada, vamos verificar se há conexões com IDs diferentes
       if (filtered.isEmpty && _userType == 'academia') {
         // Para debug: mostra todas as conexões que têm academiaId (mesmo que diferente)
@@ -155,14 +157,14 @@ class _MinhaRedePageState extends State<MinhaRedePage> {
           final data = doc.data();
           return data.containsKey('academiaId') && data['academiaId'] != null;
         }).toList();
-        
+
         // Se encontrou conexões com academiaId diferente, retorna elas para debug
         // (isso vai mostrar que há uma inconsistência)
         if (withAcademia.isNotEmpty) {
           return withAcademia;
         }
       }
-      
+
       return filtered;
     } catch (e) {
       return [];
@@ -273,7 +275,8 @@ class _MinhaRedePageState extends State<MinhaRedePage> {
         final docs = snapshot.data?.docs ?? [];
         if (docs.isEmpty) {
           // Tenta busca alternativa para verificar se há conexões com IDs diferentes
-          return FutureBuilder<List<QueryDocumentSnapshot<Map<String, dynamic>>>>(
+          return FutureBuilder<
+              List<QueryDocumentSnapshot<Map<String, dynamic>>>>(
             future: _buscarConexoesAlternativa(),
             builder: (context, altSnapshot) {
               if (altSnapshot.connectionState == ConnectionState.waiting) {
@@ -281,7 +284,7 @@ class _MinhaRedePageState extends State<MinhaRedePage> {
                   child: CircularProgressIndicator(color: Colors.red),
                 );
               }
-              
+
               final altDocs = altSnapshot.data ?? [];
               if (altDocs.isNotEmpty) {
                 // Encontrou conexões na busca alternativa - mostra elas
@@ -304,7 +307,8 @@ class _MinhaRedePageState extends State<MinhaRedePage> {
                         if (partner == null) {
                           return _ConnectionRowData(
                             partner: {
-                              'nome': 'Parceiro não encontrado (ID: ${partnerId.substring(0, 8)}...)',
+                              'nome':
+                                  'Parceiro não encontrado (ID: ${partnerId.substring(0, 8)}...)',
                               'telefone': 'N/A',
                             },
                             connectionDoc: doc,
@@ -331,7 +335,10 @@ class _MinhaRedePageState extends State<MinhaRedePage> {
                         child: CircularProgressIndicator(color: Colors.red),
                       );
                     }
-                    final rows = snapshot.data?.whereType<_ConnectionRowData>().toList(growable: false) ?? [];
+                    final rows = snapshot.data
+                            ?.whereType<_ConnectionRowData>()
+                            .toList(growable: false) ??
+                        [];
                     if (rows.isEmpty) {
                       return _buildMessage(
                         'Nenhuma conexão encontrada.\n'
@@ -343,7 +350,7 @@ class _MinhaRedePageState extends State<MinhaRedePage> {
                   },
                 );
               }
-              
+
               // Não encontrou nada mesmo na busca alternativa
               // Busca uma amostra de conexões para mostrar informações de debug
               return FutureBuilder<QuerySnapshot>(
@@ -352,30 +359,42 @@ class _MinhaRedePageState extends State<MinhaRedePage> {
                   String debugInfo = 'Nenhuma conexão encontrada.\n\n';
                   debugInfo += 'Tipo: $_userType\n';
                   debugInfo += 'UserId logado: $_userId\n\n';
-                  
-                  if (sampleSnapshot.hasData && sampleSnapshot.data!.docs.isNotEmpty) {
-                    final fieldName = _userType == 'academia' ? 'academiaId' : _userType == 'profissional' ? 'profissionalId' : 'usuarioId';
-                    final sample = sampleSnapshot.data!.docs.first.data() as Map<String, dynamic>;
+
+                  if (sampleSnapshot.hasData &&
+                      sampleSnapshot.data!.docs.isNotEmpty) {
+                    final fieldName = _userType == 'academia'
+                        ? 'academiaId'
+                        : _userType == 'profissional'
+                            ? 'profissionalId'
+                            : 'usuarioId';
+                    final sample = sampleSnapshot.data!.docs.first.data()
+                        as Map<String, dynamic>;
                     final sampleId = sample[fieldName] as String?;
-                    
+
                     if (sampleId != null) {
-                      debugInfo += 'Exemplo de ${fieldName} encontrado: $sampleId\n';
+                      debugInfo +=
+                          'Exemplo de ${fieldName} encontrado: $sampleId\n';
                       if (sampleId != _userId) {
-                        debugInfo += '\n⚠️ ATENÇÃO: O ID no documento ($sampleId) é diferente do seu userId logado.\n';
-                        debugInfo += 'Isso significa que a conexão foi criada com um ID diferente.\n\n';
+                        debugInfo +=
+                            '\n⚠️ ATENÇÃO: O ID no documento ($sampleId) é diferente do seu userId logado.\n';
+                        debugInfo +=
+                            'Isso significa que a conexão foi criada com um ID diferente.\n\n';
                         debugInfo += 'Solução:\n';
-                        debugInfo += '1. No Firestore, edite o documento e altere o campo "$fieldName" para: $_userId\n';
-                        debugInfo += '2. Ou peça ao usuário para criar uma nova solicitação de conexão.';
+                        debugInfo +=
+                            '1. No Firestore, edite o documento e altere o campo "$fieldName" para: $_userId\n';
+                        debugInfo +=
+                            '2. Ou peça ao usuário para criar uma nova solicitação de conexão.';
                       } else {
                         debugInfo += '\n✅ O ID corresponde ao seu userId.';
                       }
                     } else {
-                      debugInfo += 'Nenhum documento com o campo "$fieldName" foi encontrado.';
+                      debugInfo +=
+                          'Nenhum documento com o campo "$fieldName" foi encontrado.';
                     }
                   } else {
                     debugInfo += 'Nenhuma conexão encontrada no Firestore.';
                   }
-                  
+
                   return _buildMessage(debugInfo);
                 },
               );
@@ -404,7 +423,8 @@ class _MinhaRedePageState extends State<MinhaRedePage> {
                   // Se o parceiro não for encontrado, mostra com dados básicos
                   return _ConnectionRowData(
                     partner: {
-                      'nome': 'Parceiro não encontrado (ID: ${partnerId.substring(0, 8)}...)',
+                      'nome':
+                          'Parceiro não encontrado (ID: ${partnerId.substring(0, 8)}...)',
                       'telefone': 'N/A',
                     },
                     connectionDoc: doc,
@@ -501,7 +521,8 @@ class _MinhaRedePageState extends State<MinhaRedePage> {
     if (conexoesAtivas.isEmpty && solicitacoesPendentes.isEmpty) {
       return isManager
           ? _buildMessage('Nenhuma conexão ou solicitação encontrada.')
-          : _buildMessage('Nenhuma conexão.\nFaça uma solicitação em um perfil para aparecer aqui.');
+          : _buildMessage(
+              'Nenhuma conexão.\nFaça uma solicitação em um perfil para aparecer aqui.');
     }
 
     return ListView(
@@ -562,8 +583,8 @@ class _MinhaRedePageState extends State<MinhaRedePage> {
         partner['telefone'] as String? ??
         partner['phone'] as String? ??
         'Não informado';
-    final dataVinculo = _formatDate(_extractConnectionDate(connection)) ??
-        'Data não informada';
+    final dataVinculo =
+        _formatDate(_extractConnectionDate(connection)) ?? 'Data não informada';
     final status = (connection['status'] as String?) ?? 'pending';
 
     Color statusColor = Colors.orange;
@@ -581,19 +602,17 @@ class _MinhaRedePageState extends State<MinhaRedePage> {
         padding: const EdgeInsets.all(16),
         child: Row(
           children: [
-            // FOTO DO PERFIL
+            // FOTO DO PERFIL (JÁ CORRIGIDO O BUG DO CircleAvatar)
             CircleAvatar(
               radius: 32,
-              backgroundImage: foto.isNotEmpty
-                  ? NetworkImage(foto)
-                  : null,
+              backgroundImage: foto.isNotEmpty ? NetworkImage(foto) : null,
               backgroundColor: Colors.grey.shade300,
               child: foto.isEmpty
                   ? const Icon(Icons.person, size: 32, color: Colors.grey)
                   : null,
-              onBackgroundImageError: (_, __) {},
             ),
-            const SizedBox(width: 16),
+            // ⚠️ AJUSTE 1: Redução do espaçamento de 16 para 12 pixels
+            const SizedBox(width: 12),
             // TEXTO PRINCIPAL
             Expanded(
               child: Column(
@@ -639,11 +658,14 @@ class _MinhaRedePageState extends State<MinhaRedePage> {
                       Icon(Icons.calendar_month,
                           size: 16, color: Colors.grey.shade600),
                       const SizedBox(width: 4),
-                      Text(
-                        dataVinculo,
-                        style: TextStyle(
-                          color: Colors.grey.shade700,
-                          fontSize: 12,
+                      // ⚠️ AJUSTE 2: Usar Flexible na data para evitar overflow na Row interna
+                      Flexible(
+                        child: Text(
+                          dataVinculo,
+                          style: TextStyle(
+                            color: Colors.grey.shade700,
+                            fontSize: 12,
+                          ),
                         ),
                       ),
                     ],
@@ -662,8 +684,9 @@ class _MinhaRedePageState extends State<MinhaRedePage> {
                     style: ElevatedButton.styleFrom(
                       backgroundColor: Colors.green,
                       foregroundColor: Colors.white,
+                      // ⚠️ AJUSTE 3: Redução do padding vertical dos botões para economizar pixels
                       padding: const EdgeInsets.symmetric(
-                          horizontal: 12, vertical: 8),
+                          horizontal: 12, vertical: 6), // Era vertical: 8
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(8),
                       ),
@@ -679,8 +702,9 @@ class _MinhaRedePageState extends State<MinhaRedePage> {
                     ),
                     style: OutlinedButton.styleFrom(
                       side: const BorderSide(color: Colors.red),
+                      // ⚠️ AJUSTE 3: Redução do padding vertical dos botões para economizar pixels
                       padding: const EdgeInsets.symmetric(
-                          horizontal: 12, vertical: 8),
+                          horizontal: 12, vertical: 6), // Era vertical: 8
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(8),
                       ),
@@ -701,14 +725,14 @@ class _MinhaRedePageState extends State<MinhaRedePage> {
         'aceitoEm': FieldValue.serverTimestamp(),
         'isActiveForUsuario': true, // Sempre true quando aceito
       };
-      
+
       // Define o flag apropriado baseado no tipo de usuário
       if (_userType == 'profissional') {
         updateData['isActiveForProfissional'] = true;
       } else if (_userType == 'academia') {
         updateData['isActiveForAcademia'] = true;
       }
-      
+
       await data.connectionDoc.reference.update(updateData);
 
       // ✅ Cria notificação de conexão aceita
@@ -718,14 +742,20 @@ class _MinhaRedePageState extends State<MinhaRedePage> {
         try {
           Map<String, dynamic>? accepterProfile;
           if (_userType == 'academia') {
-            accepterProfile = (await _firestore.collection('academias').doc(_userId).get()).data();
+            accepterProfile =
+                (await _firestore.collection('academias').doc(_userId).get())
+                    .data();
           } else if (_userType == 'profissional') {
-            accepterProfile = (await _firestore.collection('professionals').doc(_userId).get()).data();
+            accepterProfile = (await _firestore
+                    .collection('professionals')
+                    .doc(_userId)
+                    .get())
+                .data();
           }
 
           final accepterName = accepterProfile?['nome'] as String? ??
-                               accepterProfile?['name'] as String? ??
-                               (_userType == 'academia' ? 'Academia' : 'Profissional');
+              accepterProfile?['name'] as String? ??
+              (_userType == 'academia' ? 'Academia' : 'Profissional');
 
           final notificationsService = NotificationsService();
           await notificationsService.createNotification(
@@ -735,7 +765,9 @@ class _MinhaRedePageState extends State<MinhaRedePage> {
             title: '$accepterName aceitou sua solicitação de conexão',
             message: 'Vocês agora estão conectados!',
             data: {
-              'connectionType': _userType == 'academia' ? 'academia_to_usuario' : 'profissional_to_usuario',
+              'connectionType': _userType == 'academia'
+                  ? 'academia_to_usuario'
+                  : 'profissional_to_usuario',
             },
           );
         } catch (e) {
@@ -770,14 +802,14 @@ class _MinhaRedePageState extends State<MinhaRedePage> {
         'status': 'rejected',
         'rejeitadoEm': FieldValue.serverTimestamp(),
       };
-      
+
       // Define o flag apropriado como false baseado no tipo de usuário
       if (_userType == 'profissional') {
         updateData['isActiveForProfissional'] = false;
       } else if (_userType == 'academia') {
         updateData['isActiveForAcademia'] = false;
       }
-      
+
       await data.connectionDoc.reference.update(updateData);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -823,5 +855,3 @@ class _MinhaRedePageState extends State<MinhaRedePage> {
     return '$day/$month/$year';
   }
 }
-
-

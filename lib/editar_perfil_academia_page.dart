@@ -136,14 +136,14 @@ class _EditarPerfilAcademiaPageState extends State<EditarPerfilAcademiaPage>
     if (currentRatio > targetRatio) {
       // A imagem é mais "larga" do que deveria → cortar laterais
       final newWidth = (height * targetRatio).toInt();
-      final xOffset = ((width - newWidth) / 2).toInt();
+      final xOffset = (width - newWidth) ~/ 2;
 
       cropped = img.copyCrop(image,
           x: xOffset, y: 0, width: newWidth, height: height);
     } else {
       // A imagem é mais "alta" → cortar topo/bottom
       final newHeight = (width / targetRatio).toInt();
-      final yOffset = ((height - newHeight) / 2).toInt();
+      final yOffset = (height - newHeight) ~/ 2;
 
       cropped = img.copyCrop(image,
           x: 0, y: yOffset, width: width, height: newHeight);

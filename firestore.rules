@@ -8,54 +8,45 @@ service cloud.firestore {
       return request.auth != null;
     }
 
-    // isOwner: compara request.auth.uid com o id passado (sem tipos na assinatura)
     function isOwner(userId) {
       return isSignedIn() && request.auth.uid == userId;
     }
 
     // ---------------------------------------------------------
     // Notifications
-    // Recomendo padrão: cada notificação tem `receiverId` (destinatário)
-    // e `senderId` (quem criou). Ajuste o cliente para usar esses campos.
     // ---------------------------------------------------------
     match /notifications/{notificationId} {
-      // Criação: permitimos que o remetente crie notifications para outro (senderId == auth.uid)
       allow create: if isSignedIn()
         && request.resource.data.senderId == request.auth.uid
-        // receiverId deve existir e ser string
         && request.resource.data.receiverId is string;
 
-      // Ler: somente quem é destinatário (receiverId) pode ler suas notificações
-      allow read: if isSignedIn() && resource.data.receiverId == request.auth.uid;
+      allow read: if isSignedIn()
+        && resource.data.receiverId == request.auth.uid;
 
-      // Atualizar / deletar: somente destinatário (ou você pode permitir sender em casos específicos)
-      allow update, delete: if isSignedIn() && resource.data.receiverId == request.auth.uid;
+      allow update, delete: if isSignedIn()
+        && resource.data.receiverId == request.auth.uid;
     }
 
     // ---------------------------------------------------------
-    // Conversations e mensagens
-    // Razoável: somente participantes podem ler/escrever.
-    // Assume que conversation doc tem campo `users`: lista com dois UIDs.
+    // Conversations e Mensagens
     // ---------------------------------------------------------
     match /conversations/{conversationId} {
-      // criação: o usuário deve estar na lista users do documento enviado
+
       allow create: if isSignedIn()
         && request.resource.data.users != null
         && request.auth.uid in request.resource.data.users;
 
-      // leitura: somente participantes (verifica no documento existente)
       allow read: if isSignedIn()
         && resource.data.users != null
         && request.auth.uid in resource.data.users;
 
-      // atualização: permite se o usuário está na lista users do request OU do documento existente
-      // Isso permite merge de conversas existentes e criação via merge
       allow update: if isSignedIn() && (
-        (request.resource.data.users != null && request.auth.uid in request.resource.data.users) ||
-        (resource.data.users != null && request.auth.uid in resource.data.users)
+        (request.resource.data.users != null
+         && request.auth.uid in request.resource.data.users) ||
+        (resource.data.users != null
+         && request.auth.uid in resource.data.users)
       );
 
-      // exclusão: somente participantes
       allow delete: if isSignedIn()
         && resource.data.users != null
         && request.auth.uid in resource.data.users;
@@ -63,7 +54,8 @@ service cloud.firestore {
       match /messages/{messageId} {
         allow create, read: if isSignedIn()
           && exists(/databases/$(database)/documents/conversations/$(conversationId))
-          && request.auth.uid in get(/databases/$(database)/documents/conversations/$(conversationId)).data.users;
+          && request.auth.uid in
+             get(/databases/$(database)/documents/conversations/$(conversationId)).data.users;
 
         allow update, delete: if isSignedIn()
           && resource.data.senderId == request.auth.uid;
@@ -72,13 +64,13 @@ service cloud.firestore {
 
     // ---------------------------------------------------------
     // Connections (minha_rede)
-    // Permitir leitura/escrita somente se o usuário for um dos envolvidos na conexão.
-    // Supõe que cada documento tem campos: usuarioId, profissionalId, academiaId.
     // ---------------------------------------------------------
     match /connections/{connectionId} {
       allow create: if isSignedIn()
         && request.resource.data.usuarioId is string
-        && (request.resource.data.profissionalId is string || request.resource.data.academiaId is string);
+        && (request.resource.data.profissionalId is string
+            || request.resource.data.academiaId is string);
+
       allow read, update, delete: if isSignedIn() && (
         request.auth.uid == resource.data.usuarioId ||
         request.auth.uid == resource.data.profissionalId ||
@@ -86,142 +78,172 @@ service cloud.firestore {
       );
     }
 
-    // Posts: leitura pública, escrita apenas autenticado
+    // ---------------------------------------------------------
+    // POSTS  (CORRIGIDO • SEM DUPLICAÇÃO • SEM authorId)
+    // ---------------------------------------------------------
     match /posts/{postId} {
+
+      // leitura pública
       allow read: if true;
-      allow create: if isSignedIn();
-      // update/delete somente autor (assumindo campo authorId)
-      allow update, delete: if isSignedIn() && resource.data.authorId == request.auth.uid;
+
+      // criar post
+      allow create: if request.auth != null;
+
+      // excluir post → apenas o autor (userId)
+      allow delete: if request.auth != null
+        && resource.data.userId == request.auth.uid;
+
+      // editar post
+      allow update: if request.auth != null && (
+
+        // 1) autor pode editar tudo
+        resource.data.userId == request.auth.uid ||
+
+        // 2) qualquer usuário autenticado pode curtir/descurtir/comentar
+        request.resource.data.diff(resource.data)
+          .changedKeys()
+          .hasOnly(['likedBy', 'likes', 'comments'])
+      );
+
+      // ----------------------------
+      // Comentários
+      // ----------------------------
+      match /comments/{commentId} {
+
+        allow read: if true;
+
+        allow create: if request.auth != null
+          && request.resource.data.userId == request.auth.uid;
+
+        allow delete: if request.auth != null
+          && resource.data.userId == request.auth.uid;
+
+        allow update: if request.auth != null
+          && resource.data.userId == request.auth.uid;
+
+        // Respostas (replies)
+        match /replies/{replyId} {
+
+          allow read: if true;
+
+          allow create: if request.auth != null
+            && request.resource.data.userId == request.auth.uid;
+
+          allow delete: if request.auth != null
+            && resource.data.userId == request.auth.uid;
+
+          allow update: if request.auth != null
+            && resource.data.userId == request.auth.uid;
+        }
+      }
     }
 
-    // Perfis
+    // ---------------------------------------------------------
+    // Perfis Academia
+    // ---------------------------------------------------------
     match /academias/{academiaId} {
       allow read: if true;
-      // Permite criar se o ID do documento for igual ao UID autenticado
+
       allow create: if isSignedIn() && academiaId == request.auth.uid;
-      // Permite atualizar se for o dono OU se for apenas atualizando campos de avaliação
+
       allow update: if isOwner(academiaId) || (
-        isSignedIn() && 
-        // Verifica se apenas os campos rating e avaliacao estão sendo modificados
-        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['rating', 'avaliacao'])
+        isSignedIn() &&
+        request.resource.data.diff(resource.data)
+          .affectedKeys()
+          .hasOnly(['rating', 'avaliacao'])
       );
-      // Permite deletar apenas se for o dono
+
       allow delete: if isOwner(academiaId);
     }
 
+    // ---------------------------------------------------------
+    // Perfis Profissionais
+    // ---------------------------------------------------------
     match /professionals/{profissionalId} {
       allow read: if true;
-      // Permite criar se o ID do documento for igual ao UID autenticado
+
       allow create: if isSignedIn() && profissionalId == request.auth.uid;
-      // Permite atualizar se for o dono OU se for apenas atualizando campos de avaliação
+
       allow update: if isOwner(profissionalId) || (
-        isSignedIn() && 
-        // Verifica se apenas os campos rating e avaliacao estão sendo modificados
-        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['rating', 'avaliacao'])
+        isSignedIn() &&
+        request.resource.data.diff(resource.data)
+          .affectedKeys()
+          .hasOnly(['rating', 'avaliacao'])
       );
-      // Permite deletar apenas se for o dono
+
       allow delete: if isOwner(profissionalId);
     }
 
+    // ---------------------------------------------------------
+    // Users
+    // ---------------------------------------------------------
     match /users/{userId} {
-      // Permite leitura pública para verificar emails durante registro
-      // e leitura autenticada para outros casos
       allow read: if true;
-      // Permite criar se o ID do documento for igual ao UID autenticado
+
       allow create: if isSignedIn() && userId == request.auth.uid;
-      // Permite atualizar/deletar se for o dono
+
       allow update, delete: if isOwner(userId);
     }
 
     // ---------------------------------------------------------
-    // Treinos (workouts)
-    // Permite que profissionais criem seus próprios treinos
-    // Permite leitura para usuários autenticados (para ver treinos atribuídos)
-    // Nota: Profissionais também estão na coleção users com userType: 'profissional'
+    // Treinos
     // ---------------------------------------------------------
     match /treinos/{treinoId} {
-      // Criação: qualquer usuário autenticado pode criar treinos
+
       allow create: if isSignedIn();
-      
-      // Leitura: qualquer usuário autenticado pode ler (acesso controlado via treinos_atribuidos)
+
       allow read: if isSignedIn();
-      
-      // Atualização/Exclusão: apenas o profissional que criou o treino
+
       allow update, delete: if isSignedIn()
         && resource.data.profissionalId == request.auth.uid;
     }
 
     // ---------------------------------------------------------
-    // Treinos Atribuídos (workout assignments)
-    // Estrutura: workoutId, clienteId, profissionalId, atribuidoEm, status
-    // Nota: Profissionais também estão na coleção users com userType: 'profissional'
-    // e o uid deles é o mesmo que o profissionalId
+    // Treinos Atribuídos
     // ---------------------------------------------------------
     match /treinos_atribuidos/{atribuicaoId} {
-      // Criação: qualquer usuário autenticado pode criar atribuições
-      // Simplificado para permitir qualquer criação autenticada
+
       allow create: if isSignedIn();
-      
-      // Leitura: 
-      // - Profissionais podem ler treinos que eles atribuíram (para verificar duplicatas)
-      // - Clientes podem ler treinos atribuídos a eles
-      // Permite leitura se o usuário for o profissional OU o cliente
+
       allow read: if isSignedIn() && (
         resource.data.profissionalId == request.auth.uid ||
         resource.data.clienteId == request.auth.uid
       );
-      
-      // Permite queries para verificar duplicatas antes de criar
-      // Profissionais podem fazer queries onde workoutId e clienteId são especificados
+
       allow list: if isSignedIn();
-      
-      // Atualização: apenas o profissional que atribuiu pode atualizar
-      // (ex: mudar status)
+
       allow update: if isSignedIn()
         && resource.data.profissionalId == request.auth.uid;
-      
-      // Exclusão: apenas o profissional que atribuiu pode deletar
+
       allow delete: if isSignedIn()
         && resource.data.profissionalId == request.auth.uid;
     }
 
     // ---------------------------------------------------------
-    // Planos Nutricionais (nutrition plans)
-    // Estrutura: createdBy, studentUid, title, objective, observations, days, status
+    // Planos Nutricionais
     // ---------------------------------------------------------
     match /nutrition_plans/{planId} {
-      // Criação: qualquer usuário autenticado pode criar planos
+
       allow create: if isSignedIn();
-      
-      // Leitura: 
-      // - Nutricionistas podem ler planos que criaram
-      // - Alunos podem ler planos atribuídos a eles
+
       allow read: if isSignedIn() && (
         resource.data.createdBy == request.auth.uid ||
         resource.data.studentUid == request.auth.uid
       );
-      
-      // Atualização: apenas o nutricionista que criou pode atualizar
+
       allow update: if isSignedIn()
         && resource.data.createdBy == request.auth.uid;
-      
-      // Exclusão: apenas o nutricionista que criou pode deletar
+
       allow delete: if isSignedIn()
         && resource.data.createdBy == request.auth.uid;
     }
 
     // ---------------------------------------------------------
-    // Avaliações (ratings)
-    // Estrutura: targetId, targetType, userId, rating, comment, createdAt, updatedAt
-    // Permite que usuários avaliem profissionais e academias
+    // Ratings
     // ---------------------------------------------------------
     match /ratings/{ratingId} {
-      // Leitura: qualquer um pode ler avaliações (público)
       allow read: if true;
-      
-      // Criação: apenas usuários autenticados podem criar avaliações
-      // O userId deve ser igual ao auth.uid do usuário logado
-      // Aceita valores decimais de 0.0 a 5.0
+
       allow create: if isSignedIn()
         && request.resource.data.userId == request.auth.uid
         && request.resource.data.targetId is string
@@ -229,22 +251,21 @@ service cloud.firestore {
         && (request.resource.data.rating is int || request.resource.data.rating is float)
         && request.resource.data.rating >= 0.0
         && request.resource.data.rating <= 5.0;
-      
-      // Atualização: apenas o usuário que criou a avaliação pode atualizá-la
-      // Aceita valores decimais de 0.0 a 5.0
+
       allow update: if isSignedIn()
         && resource.data.userId == request.auth.uid
         && request.resource.data.userId == request.auth.uid
         && (request.resource.data.rating is int || request.resource.data.rating is float)
         && request.resource.data.rating >= 0.0
         && request.resource.data.rating <= 5.0;
-      
-      // Exclusão: apenas o usuário que criou a avaliação pode deletá-la
+
       allow delete: if isSignedIn()
         && resource.data.userId == request.auth.uid;
     }
 
-    // Demais caminhos negados por padrão
+    // ---------------------------------------------------------
+    // Default deny
+    // ---------------------------------------------------------
     match /{document=**} {
       allow read, write: if false;
     }

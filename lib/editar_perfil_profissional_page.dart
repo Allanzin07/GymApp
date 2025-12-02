@@ -129,11 +129,11 @@ class _EditarPerfilProfissionalPageState
 
     if (currentRatio > targetRatio) {
       final newW = (h * targetRatio).toInt();
-      final x = ((w - newW) / 2).toInt();
+      final x = (w - newW) ~/ 2;
       cropped = img.copyCrop(decoded, x: x, y: 0, width: newW, height: h);
     } else {
       final newH = (w / targetRatio).toInt();
-      final y = ((h - newH) / 2).toInt();
+      final y = (h - newH) ~/ 2;
       cropped = img.copyCrop(decoded, x: 0, y: y, width: w, height: newH);
     }
 

@@ -90,7 +90,7 @@ class CustomRadiusButton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return SizedBox(
-      width: expandedinWeb ? double.infinity : null,
+      width: double.infinity,
       child: ElevatedButton.icon(
         icon: icon ?? const SizedBox(),
         label: Text(

@@ -3,6 +3,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:firebase_messaging/firebase_messaging.dart';
 
 import 'home_usuario_page.dart';
 import 'home_academia_page.dart';
@@ -11,6 +12,7 @@ import 'choose_login_type_page.dart';
 import 'custom_widgets.dart';
 import 'register_page.dart';
 import 'forgot_password_page.dart';
+
 
 class LoginPage extends StatefulWidget {
   final String userType;
@@ -48,7 +50,8 @@ class _LoginPageState extends State<LoginPage> {
       );
 
       final uid = credential.user!.uid;
-      final doc = await FirebaseFirestore.instance.collection('users').doc(uid).get();
+      final doc =
+          await FirebaseFirestore.instance.collection('users').doc(uid).get();
 
       if (!doc.exists) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -61,7 +64,8 @@ class _LoginPageState extends State<LoginPage> {
       final savedType = doc['userType'];
       if (savedType != widget.userType) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text('Este e-mail está cadastrado como "$savedType", não como "${widget.userType}".'),
+          content: Text(
+              'Este e-mail está cadastrado como "$savedType", não como "${widget.userType}".'),
         ));
         await FirebaseAuth.instance.signOut();
         return;
@@ -70,11 +74,19 @@ class _LoginPageState extends State<LoginPage> {
       final user = FirebaseAuth.instance.currentUser;
       if (user != null && !user.emailVerified) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Verifique seu e-mail antes de fazer login.')),
+          const SnackBar(
+              content: Text('Verifique seu e-mail antes de fazer login.')),
         );
         await FirebaseAuth.instance.signOut();
         return;
       }
+
+    // 🔔 Registra token push
+      final token = await FirebaseMessaging.instance.getToken();
+      await FirebaseFirestore.instance
+          .collection('users')
+          .doc(uid)
+          .update({'deviceToken': token});      
 
       Navigator.pushReplacement(
         context,
@@ -95,7 +107,8 @@ class _LoginPageState extends State<LoginPage> {
       UserCredential userCredential;
       if (kIsWeb) {
         final googleProvider = GoogleAuthProvider();
-        userCredential = await FirebaseAuth.instance.signInWithPopup(googleProvider);
+        userCredential =
+            await FirebaseAuth.instance.signInWithPopup(googleProvider);
       } else {
         final googleUser = await GoogleSignIn().signIn();
         if (googleUser == null) return;
@@ -104,18 +117,21 @@ class _LoginPageState extends State<LoginPage> {
           accessToken: googleAuth.accessToken,
           idToken: googleAuth.idToken,
         );
-        userCredential = await FirebaseAuth.instance.signInWithCredential(credential);
+        userCredential =
+            await FirebaseAuth.instance.signInWithCredential(credential);
       }
 
       final user = userCredential.user!;
-      final userDoc = FirebaseFirestore.instance.collection('users').doc(user.uid);
+      final userDoc =
+          FirebaseFirestore.instance.collection('users').doc(user.uid);
       final snapshot = await userDoc.get();
 
       if (snapshot.exists) {
         final savedType = snapshot['userType'];
         if (savedType != widget.userType) {
           ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-            content: Text('Esta conta Google já está cadastrada como "$savedType".'),
+            content:
+                Text('Esta conta Google já está cadastrada como "$savedType".'),
           ));
           await FirebaseAuth.instance.signOut();
           return;
@@ -129,6 +145,12 @@ class _LoginPageState extends State<LoginPage> {
           'createdAt': FieldValue.serverTimestamp(),
         });
       }
+
+      final token = await FirebaseMessaging.instance.getToken();
+      await FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid)
+          .update({'deviceToken': token});      
 
       Navigator.pushReplacement(
         context,
@@ -153,7 +175,8 @@ class _LoginPageState extends State<LoginPage> {
   void _goToRegister() {
     Navigator.push(
       context,
-      MaterialPageRoute(builder: (_) => RegisterPage(userType: widget.userType)),
+      MaterialPageRoute(
+          builder: (_) => RegisterPage(userType: widget.userType)),
     );
   }
 
@@ -210,80 +233,87 @@ class _LoginPageState extends State<LoginPage> {
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                  Image.asset('assets/logo_fundo.png', width: kIsWeb ? 250 : 300, height: kIsWeb ? 250 : 300),
-                const SizedBox(height: 25),
+                    Image.asset('assets/logo_fundo.png',
+                        width: kIsWeb ? 250 : 300, height: kIsWeb ? 250 : 300),
+                    const SizedBox(height: 25),
 
-                CustomRadiusTextfield(controller: _emailController, hintText: 'E-mail'),
-                const SizedBox(height: 16),
-                CustomRadiusTextfield(
-                  controller: _passwordController,
-                  hintText: 'Senha',
-                  obscureText: _obscurePassword,
-                  suffixIcon: IconButton(
-                    icon: Icon(
-                      _obscurePassword ? Icons.visibility : Icons.visibility_off,
-                      color: Colors.grey,
-                    ),
-                    onPressed: () {
-                      setState(() {
-                        _obscurePassword = !_obscurePassword;
-                      });
-                    },
-                  ),
-                ),
-                const SizedBox(height: 8),
-
-                Align(
-                  alignment: Alignment.centerRight,
-                  child: TextButton(
-                    onPressed: _goToForgotPassword,
-                    child: const Text('Esqueci a senha', style: TextStyle(color: Colors.white)),
-                  ),
-                ),
-                const SizedBox(height: 8),
-
-                _loading
-                    ? const CircularProgressIndicator(color: Colors.white)
-                    : CustomRadiusButton(
-                        onPressed: _onLoginClick,
-                        text: 'Entrar como ${widget.userType}',
+                    CustomRadiusTextfield(
+                        controller: _emailController, hintText: 'E-mail'),
+                    const SizedBox(height: 16),
+                    CustomRadiusTextfield(
+                      controller: _passwordController,
+                      hintText: 'Senha',
+                      obscureText: _obscurePassword,
+                      suffixIcon: IconButton(
+                        icon: Icon(
+                          _obscurePassword
+                              ? Icons.visibility
+                              : Icons.visibility_off,
+                          color: Colors.grey,
+                        ),
+                        onPressed: () {
+                          setState(() {
+                            _obscurePassword = !_obscurePassword;
+                          });
+                        },
                       ),
-                const SizedBox(height: 8),
-
-                Row(
-                  children: const [
-                    Expanded(child: Divider(color: Colors.white54)),
-                    Padding(
-                      padding: EdgeInsets.symmetric(horizontal: 8.0),
-                      child: Text('ou', style: TextStyle(color: Colors.white)),
                     ),
-                    Expanded(child: Divider(color: Colors.white54)),
-                  ],
-                ),
-                const SizedBox(height: 8),
+                    const SizedBox(height: 8),
 
-                CustomRadiusButton(
-                  onPressed: _onGoogleSignIn,
-                  text: 'Entrar com Google',
-                  expandedinWeb: true,
-                  backgroundColor: Colors.white,
-                  textColor: Colors.black87,
-                  icon: Image.asset('assets/google_logo.png', width: 20, height: 20),
-                ),
-                const SizedBox(height: 8),
-
-                CustomRadiusButton(onPressed: _goToRegister, text: 'Registrar-se'),
-                // Mostra botão "Continuar sem logar" apenas para usuários
-                if (widget.userType == 'Usuário') ...[
-                  const SizedBox(height: 8),
-                  TextButton(
-                    onPressed: _continueAsGuest,
-                    child: const Text(
-                      'Continuar sem logar',
-                      style: TextStyle(color: Colors.white70, fontSize: 16),
+                    Align(
+                      alignment: Alignment.centerRight,
+                      child: TextButton(
+                        onPressed: _goToForgotPassword,
+                        child: const Text('Esqueci a senha',
+                            style: TextStyle(color: Colors.white)),
+                      ),
                     ),
-                  ),
-                ],
+                    const SizedBox(height: 8),
+
+                    _loading
+                        ? const CircularProgressIndicator(color: Colors.white)
+                        : CustomRadiusButton(
+                            onPressed: _onLoginClick,
+                            text: 'Entrar como ${widget.userType}',
+                          ),
+                    const SizedBox(height: 8),
+
+                    Row(
+                      children: const [
+                        Expanded(child: Divider(color: Colors.white54)),
+                        Padding(
+                          padding: EdgeInsets.symmetric(horizontal: 8.0),
+                          child:
+                              Text('ou', style: TextStyle(color: Colors.white)),
+                        ),
+                        Expanded(child: Divider(color: Colors.white54)),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+
+                    CustomRadiusButton(
+                      onPressed: _onGoogleSignIn,
+                      text: 'Entrar com Google',                      
+                      backgroundColor: Colors.white,
+                      textColor: Colors.black87,
+                      icon: Image.asset('assets/google_logo.png',
+                          width: 20, height: 20),
+                    ),
+                    const SizedBox(height: 8),
+
+                    CustomRadiusButton(
+                        onPressed: _goToRegister, text: 'Registrar-se'),
+                    // Mostra botão "Continuar sem logar" apenas para usuários
+                    if (widget.userType == 'Usuário') ...[
+                      const SizedBox(height: 8),
+                      TextButton(
+                        onPressed: _continueAsGuest,
+                        child: const Text(
+                          'Continuar sem logar',
+                          style: TextStyle(color: Colors.white70, fontSize: 16),
+                        ),
+                      ),
+                    ],
                   ],
                 ),
               ),

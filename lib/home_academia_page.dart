@@ -4,7 +4,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
 import 'editar_perfil_academia_page.dart';
-import 'login_page.dart';
+import 'choose_login_type_page.dart';
 import 'post_feed_widget.dart';
 import 'minha_rede_page.dart';
 import 'conversations_page.dart';
@@ -55,12 +55,13 @@ class _ConnectionButton extends StatelessWidget {
     }
 
     final _firestore = FirebaseFirestore.instance;
-    
+
     return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
       stream: _firestore
           .collection('connections')
           .where('usuarioId', isEqualTo: currentUserId)
-          .where(targetType == 'profissional' ? 'profissionalId' : 'academiaId', isEqualTo: targetId)
+          .where(targetType == 'profissional' ? 'profissionalId' : 'academiaId',
+              isEqualTo: targetId)
           .limit(1)
           .snapshots(),
       builder: (context, snapshot) {
@@ -90,7 +91,8 @@ class _ConnectionButton extends StatelessWidget {
                 style: ElevatedButton.styleFrom(
                   backgroundColor: Colors.red,
                   foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(12),
                   ),
@@ -105,7 +107,8 @@ class _ConnectionButton extends StatelessWidget {
                 style: ElevatedButton.styleFrom(
                   backgroundColor: Colors.green,
                   foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(12),
                   ),
@@ -120,7 +123,8 @@ class _ConnectionButton extends StatelessWidget {
                 style: ElevatedButton.styleFrom(
                   backgroundColor: Colors.orange,
                   foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(12),
                   ),
@@ -136,13 +140,14 @@ class _ConnectionButton extends StatelessWidget {
                 icon: const Icon(Icons.hourglass_empty),
                 label: const Text('Aguardando'),
               )
-              else
+            else
               // Outro status (rejected, etc) - permite conectar novamente
               ElevatedButton.icon(
                 style: ElevatedButton.styleFrom(
                   backgroundColor: Colors.red,
                   foregroundColor: Colors.white,
-                  padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
                   shape: RoundedRectangleBorder(
                     borderRadius: BorderRadius.circular(12),
                   ),
@@ -156,7 +161,8 @@ class _ConnectionButton extends StatelessWidget {
               style: OutlinedButton.styleFrom(
                 foregroundColor: Colors.red.shade700,
                 side: BorderSide(color: Colors.red.shade300, width: 1.5),
-                padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
                 shape: RoundedRectangleBorder(
                   borderRadius: BorderRadius.circular(12),
                 ),
@@ -192,6 +198,32 @@ class _HomeAcademiaPageState extends State<HomeAcademiaPage> {
   bool get _isOwner =>
       widget.academiaId == null || widget.academiaId == _auth.currentUser?.uid;
 
+  void _showZoomableImage(BuildContext context, String imageUrl, String name) {
+    Navigator.push(
+      context,
+      PageRouteBuilder(
+        opaque: false, // Torna a rota transparente para ver o fundo
+        barrierDismissible: true, // Permite fechar ao tocar fora
+        pageBuilder: (context, animation, secondaryAnimation) {
+          return Center(
+            child: ZoomableProfileView(
+              imageUrl: imageUrl,
+              name: name,
+              heroTag: 'academia-profile-picture-$_academiaId', // Tag única
+            ),
+          );
+        },
+        // Efeito de fade na transição
+        transitionsBuilder: (context, animation, secondaryAnimation, child) {
+          return FadeTransition(
+            opacity: animation,
+            child: child,
+          );
+        },
+      ),
+    );
+  }
+
   Future<void> _connectWithAcademia() async {
     final currentUser = _auth.currentUser;
     if (currentUser == null) {
@@ -215,13 +247,15 @@ class _HomeAcademiaPageState extends State<HomeAcademiaPage> {
         final data = doc.data();
         final currentStatus = (data['status'] as String?) ?? 'pending';
         if (!data.containsKey('status')) {
-          await doc.reference.set({'status': 'pending'}, SetOptions(merge: true));
+          await doc.reference
+              .set({'status': 'pending'}, SetOptions(merge: true));
         }
         if (!mounted) return;
         final message = currentStatus == 'active'
             ? 'Você já está conectado a esta academia.'
             : 'Aguardando aprovação desta academia.';
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+        ScaffoldMessenger.of(context)
+            .showSnackBar(SnackBar(content: Text(message)));
         return;
       }
 
@@ -240,8 +274,8 @@ class _HomeAcademiaPageState extends State<HomeAcademiaPage> {
         final chatService = ChatService();
         final userProfile = await chatService.fetchProfile(currentUser.uid);
         final userName = userProfile['nome'] as String? ??
-                        userProfile['name'] as String? ??
-                        'Usuário';
+            userProfile['name'] as String? ??
+            'Usuário';
 
         await notificationsService.createNotification(
           senderId: currentUser.uid,
@@ -260,7 +294,8 @@ class _HomeAcademiaPageState extends State<HomeAcademiaPage> {
 
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Solicitação registrada! Verifique sua rede.')),
+        const SnackBar(
+            content: Text('Solicitação registrada! Verifique sua rede.')),
       );
 
       Navigator.push(
@@ -353,12 +388,26 @@ class _HomeAcademiaPageState extends State<HomeAcademiaPage> {
     );
 
     if (confirm == true && mounted) {
-      Navigator.pushReplacement(
-        context,
-        MaterialPageRoute(
-          builder: (_) => const LoginPage(userType: 'Academia'),
-        ),
-      );
+      try {
+        // Faz logout do Firebase Auth
+        await FirebaseAuth.instance.signOut();
+
+        // Navega para a tela de escolha de login removendo todas as rotas anteriores
+        Navigator.pushAndRemoveUntil(
+          context,
+          MaterialPageRoute(builder: (_) => const ChooseLoginTypePage()),
+          (route) => false,
+        );
+      } catch (e) {
+        // Em caso de erro, ainda tenta navegar
+        if (mounted) {
+          Navigator.pushAndRemoveUntil(
+            context,
+            MaterialPageRoute(builder: (_) => const ChooseLoginTypePage()),
+            (route) => false,
+          );
+        }
+      }
     }
   }
 
@@ -380,7 +429,8 @@ class _HomeAcademiaPageState extends State<HomeAcademiaPage> {
             child: Align(
               alignment: Alignment.bottomRight,
               child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 420, maxHeight: 600),
+                constraints:
+                    const BoxConstraints(maxWidth: 420, maxHeight: 600),
                 child: Material(
                   borderRadius: BorderRadius.circular(16),
                   clipBehavior: Clip.antiAlias,
@@ -427,7 +477,8 @@ class _HomeAcademiaPageState extends State<HomeAcademiaPage> {
         final data = snapshot.data?.data() as Map<String, dynamic>? ?? {};
 
         final nome = data['nome'] ?? 'Nome da Academia';
-        final descricao = data['descricao'] ?? 'Descrição da academia ainda não cadastrada.';
+        final descricao =
+            data['descricao'] ?? 'Descrição da academia ainda não cadastrada.';
         final localizacao = data['localizacao'] ?? 'Localização não informada';
         final email = data['email'] ?? '';
         final whatsapp = data['whatsapp'] ?? '';
@@ -532,151 +583,202 @@ class _HomeAcademiaPageState extends State<HomeAcademiaPage> {
                         Container(
                           height: 180,
                           width: double.infinity,
-                      decoration: BoxDecoration(
-                        image: DecorationImage(
-                          image: NetworkImage(capaUrl),
-                          fit: BoxFit.cover,
-                        ),
-                      ),
-                    ),
-                    // 🖼️ Foto de perfil
-                    Positioned(
-                      bottom: -50,
-                      left: 20,
-                      child: CircleAvatar(
-                        radius: 50,
-                        backgroundColor: Theme.of(context).cardTheme.color ?? Colors.white,
-                        backgroundImage: NetworkImage(fotoPerfilUrl),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 60),
-                // Nome e descrição
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16.0),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        nome,
-                        style: TextStyle(
-                          fontSize: 24,
-                          fontWeight: FontWeight.bold,
-                          color: Theme.of(context).textTheme.titleLarge?.color,
-                        ),
-                      ),
-                      const SizedBox(height: 6),
-                      Text(
-                        descricao,
-                        style: TextStyle(
-                          fontSize: 16,
-                          color: Theme.of(context).textTheme.bodyLarge?.color,
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      Row(
-                        children: [
-                          Icon(Icons.location_on, color: Theme.of(context).iconTheme.color?.withOpacity(0.7), size: 18),
-                          const SizedBox(width: 4),
-                          Expanded(
-                            child: Text(
-                              localizacao,
-                              style: TextStyle(color: Theme.of(context).textTheme.bodySmall?.color),
+                          decoration: BoxDecoration(
+                            image: DecorationImage(
+                              image: NetworkImage(capaUrl),
+                              fit: BoxFit.cover,
                             ),
                           ),
+                        ),
+                        // 🖼️ Foto de perfil (MODIFICAÇÃO AQUI)
+                        Positioned(
+                          bottom: -50,
+                          left: 20,
+                          // 1. Usar GestureDetector para detectar o toque
+                          child: GestureDetector(
+                            onTap: () => _showZoomableImage(
+                                context, fotoPerfilUrl, nome),
+                            // 2. Usar Hero para a animação de transição (zoom suave)
+                            child: Hero(
+                              // A tag DEVE ser única para este widget
+                              tag: 'academia-profile-picture-$_academiaId',
+                              child: CircleAvatar(
+                                radius: 50,
+                                backgroundColor:
+                                    Theme.of(context).cardTheme.color ??
+                                        Colors.white,
+                                backgroundImage: NetworkImage(fotoPerfilUrl),
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 60),
+                    // Nome e descrição
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            nome,
+                            style: TextStyle(
+                              fontSize: 24,
+                              fontWeight: FontWeight.bold,
+                              color:
+                                  Theme.of(context).textTheme.titleLarge?.color,
+                            ),
+                          ),
+                          const SizedBox(height: 6),
+                          Text(
+                            descricao,
+                            style: TextStyle(
+                              fontSize: 16,
+                              color:
+                                  Theme.of(context).textTheme.bodyLarge?.color,
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          Row(
+                            children: [
+                              Icon(Icons.location_on,
+                                  color: Theme.of(context)
+                                      .iconTheme
+                                      .color
+                                      ?.withOpacity(0.7),
+                                  size: 18),
+                              const SizedBox(width: 4),
+                              Expanded(
+                                child: Text(
+                                  localizacao,
+                                  style: TextStyle(
+                                      color: Theme.of(context)
+                                          .textTheme
+                                          .bodySmall
+                                          ?.color),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 8),
+                          if (email.isNotEmpty)
+                            Row(
+                              children: [
+                                Icon(Icons.email,
+                                    color: Theme.of(context)
+                                        .iconTheme
+                                        .color
+                                        ?.withOpacity(0.7),
+                                    size: 18),
+                                const SizedBox(width: 4),
+                                Text(email,
+                                    style: TextStyle(
+                                        color: Theme.of(context)
+                                            .textTheme
+                                            .bodySmall
+                                            ?.color)),
+                              ],
+                            ),
+                          if (whatsapp.isNotEmpty)
+                            Row(
+                              children: [
+                                Icon(Icons.phone,
+                                    color: Theme.of(context)
+                                        .iconTheme
+                                        .color
+                                        ?.withOpacity(0.7),
+                                    size: 18),
+                                const SizedBox(width: 4),
+                                Text(whatsapp,
+                                    style: TextStyle(
+                                        color: Theme.of(context)
+                                            .textTheme
+                                            .bodySmall
+                                            ?.color)),
+                              ],
+                            ),
+                          if (link.isNotEmpty)
+                            Row(
+                              children: [
+                                Icon(Icons.link,
+                                    color: Theme.of(context)
+                                        .iconTheme
+                                        .color
+                                        ?.withOpacity(0.7),
+                                    size: 18),
+                                const SizedBox(width: 4),
+                                Flexible(
+                                  child: Text(
+                                    link,
+                                    style:
+                                        TextStyle(color: Colors.blue.shade300),
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          const SizedBox(height: 16),
+                          if (!_isOwner) ...[
+                            _ConnectionButton(
+                              currentUserId: _auth.currentUser?.uid,
+                              targetId: _academiaId,
+                              targetType: 'academia',
+                              onConnect: _connectWithAcademia,
+                              onDisconnect: _disconnectFromAcademia,
+                              onChat: () => _openChat(
+                                participantName: nome,
+                                participantPhotoUrl: fotoPerfilUrl,
+                              ),
+                            ),
+                            const SizedBox(height: 16),
+                            RatingsWidget(
+                              targetId: _academiaId,
+                              targetType: 'academia',
+                              currentUserId: _auth.currentUser?.uid,
+                            ),
+                            const SizedBox(height: 16),
+                          ],
+                          if (_isOwner) ...[
+                            Align(
+                              alignment: Alignment.centerLeft,
+                              child: ElevatedButton.icon(
+                                onPressed: () {
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (_) =>
+                                          const EditarPerfilAcademiaPage(),
+                                    ),
+                                  );
+                                },
+                                icon:
+                                    const Icon(Icons.edit, color: Colors.white),
+                                label: const Text(
+                                  "Editar Perfil",
+                                  style: TextStyle(color: Colors.white),
+                                ),
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: Colors.red,
+                                  shape: RoundedRectangleBorder(
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                ),
+                              ),
+                            ),
+                            const SizedBox(height: 16),
+                          ],
                         ],
                       ),
-                      const SizedBox(height: 8),
-                      if (email.isNotEmpty)
-                        Row(
-                          children: [
-                            Icon(Icons.email, color: Theme.of(context).iconTheme.color?.withOpacity(0.7), size: 18),
-                            const SizedBox(width: 4),
-                            Text(email, style: TextStyle(color: Theme.of(context).textTheme.bodySmall?.color)),
-                          ],
-                        ),
-                      if (whatsapp.isNotEmpty)
-                        Row(
-                          children: [
-                            Icon(Icons.phone, color: Theme.of(context).iconTheme.color?.withOpacity(0.7), size: 18),
-                            const SizedBox(width: 4),
-                            Text(whatsapp, style: TextStyle(color: Theme.of(context).textTheme.bodySmall?.color)),
-                          ],
-                        ),
-                      if (link.isNotEmpty)
-                        Row(
-                          children: [
-                            Icon(Icons.link, color: Theme.of(context).iconTheme.color?.withOpacity(0.7), size: 18),
-                            const SizedBox(width: 4),
-                            Flexible(
-                              child: Text(
-                                link,
-                                style: TextStyle(color: Colors.blue.shade300),
-                                overflow: TextOverflow.ellipsis,
-                              ),
-                            ),
-                          ],
-                        ),
-                      const SizedBox(height: 16),
-                      if (!_isOwner) ...[
-                        _ConnectionButton(
-                          currentUserId: _auth.currentUser?.uid,
-                          targetId: _academiaId,
-                          targetType: 'academia',
-                          onConnect: _connectWithAcademia,
-                          onDisconnect: _disconnectFromAcademia,
-                          onChat: () => _openChat(
-                            participantName: nome,
-                            participantPhotoUrl: fotoPerfilUrl,
-                          ),
-                        ),
-                        const SizedBox(height: 16),
-                        RatingsWidget(
-                          targetId: _academiaId,
-                          targetType: 'academia',
-                          currentUserId: _auth.currentUser?.uid,
-                        ),
-                        const SizedBox(height: 16),
-                      ],
-                      if (_isOwner) ...[
-                        Align(
-                          alignment: Alignment.centerLeft,
-                          child: ElevatedButton.icon(
-                            onPressed: () {
-                              Navigator.push(
-                                context,
-                                MaterialPageRoute(
-                                  builder: (_) => const EditarPerfilAcademiaPage(),
-                                ),
-                              );
-                            },
-                            icon: const Icon(Icons.edit, color: Colors.white),
-                            label: const Text(
-                              "Editar Perfil",
-                              style: TextStyle(color: Colors.white),
-                            ),
-                            style: ElevatedButton.styleFrom(
-                              backgroundColor: Colors.red,
-                              shape: RoundedRectangleBorder(
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                            ),
-                          ),
-                        ),
-                        const SizedBox(height: 16),
-                      ],
-                    ],
-                  ),
-                ),
-                const Divider(height: 32, thickness: 0.8),
-                // Feed de publicações
-                PostFeedWidget(
-                  userId: _academiaId,
-                  userName: nome,
-                  userPhotoUrl: fotoPerfilUrl,
-                  collectionName: 'academias',
-                ),
+                    ),
+                    const Divider(height: 32, thickness: 0.8),
+                    // Feed de publicações
+                    PostFeedWidget(
+                      userId: _academiaId,
+                      userName: nome,
+                      userPhotoUrl: fotoPerfilUrl,
+                      collectionName: 'academias',
+                    ),
                     const SizedBox(height: 40),
                   ],
                 ),
@@ -685,6 +787,92 @@ class _HomeAcademiaPageState extends State<HomeAcademiaPage> {
           ),
         );
       },
+    );
+  }
+}
+
+class ZoomableProfileView extends StatelessWidget {
+  final String imageUrl;
+  final String name;
+  final String heroTag;
+
+  const ZoomableProfileView({
+    super.key,
+    required this.imageUrl,
+    required this.name,
+    required this.heroTag,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    // GestureDetector para fechar ao tocar em qualquer lugar
+    return GestureDetector(
+      onTap: () {
+        Navigator.pop(context); // Fecha a tela de zoom
+      },
+      // Usamos Scaffold para garantir que o layout ocupe a tela corretamente
+      child: Scaffold(
+        backgroundColor:
+            Colors.black.withOpacity(0.9), // Fundo escuro semi-transparente
+        body: Center(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              // O Hero deve ter a mesma tag do Hero no perfil (HomeAcademiaPage, HomeProfissionalPage, etc.)
+              Hero(
+                tag: heroTag,
+                child: Image.network(
+                  imageUrl,
+                  // Tenta ocupar a maior parte da tela, mas mantendo a proporção
+                  fit: BoxFit.contain,
+                  height: MediaQuery.of(context).size.height * 0.8,
+                  width: MediaQuery.of(context).size.width * 0.9,
+                  loadingBuilder: (context, child, loadingProgress) {
+                    if (loadingProgress == null) return child;
+                    return SizedBox(
+                      height: 100,
+                      width: 100,
+                      child: Center(
+                        child: CircularProgressIndicator(
+                          value: loadingProgress.expectedTotalBytes != null
+                              ? loadingProgress.cumulativeBytesLoaded /
+                                  loadingProgress.expectedTotalBytes!
+                              : null,
+                          color: Colors.red,
+                        ),
+                      ),
+                    );
+                  },
+                  errorBuilder: (context, error, stackTrace) {
+                    return const Icon(Icons.error,
+                        color: Colors.white, size: 100);
+                  },
+                ),
+              ),
+              const SizedBox(height: 20),
+              Text(
+                name,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 20,
+                  fontWeight: FontWeight.bold,
+                  decoration: TextDecoration
+                      .none, // Para remover qualquer sublinhado padrão de links em alguns contextos
+                ),
+              ),
+              const SizedBox(height: 10),
+              const Text(
+                'Toque para fechar',
+                style: TextStyle(
+                  color: Colors.white70,
+                  fontSize: 14,
+                  decoration: TextDecoration.none,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 }
